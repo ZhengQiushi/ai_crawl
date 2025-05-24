@@ -20,6 +20,8 @@ from enum import Enum
 
 async def example_callback(url: str, html: str):
     """示例回调函数，简单保存页面"""
+    # if "https://www.creatif.com/livingston-nj/camp-calendar" in url:
+    #     print(html)
     print(f"Processed {url}, length: {len(html)}")
 
 
@@ -34,14 +36,14 @@ async def main():
     )
     
     start_urls = [
-        "https://www.creatif.com",
-        "https://www.fortleenj.org",
-        "http://www.countrysidechildcarenj.com/",
-        "http://grochowiczfarms.com",
-        "http://baseballrubbingmud.com/",
-        "https://macsdefense.com/",
-        "https://www.wssweddings.com/",
-        "https://www.frogrentscanoeskayaks.com/",
+        "https://www.creatif.com/livingston-nj/",
+        # "https://www.fortleenj.org",
+        # "http://www.countrysidechildcarenj.com/",
+        # "http://grochowiczfarms.com",
+        # "http://baseballrubbingmud.com/",
+        # "https://macsdefense.com/",
+        # "https://www.wssweddings.com/",
+        # "https://www.frogrentscanoeskayaks.com/",
     ]
     
     await crawler.crawl_website(start_urls, example_callback)

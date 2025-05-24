@@ -31,6 +31,10 @@ class LinkExtractor:
             absolute_url = urljoin(base_url, href)
             parsed = urlparse(absolute_url)
 
+            if "docs.google.com/forms" in absolute_url:
+                links.add(absolute_url)
+                continue
+
             # 检查协议和子域名
             link_domain = parsed.netloc
             if link_domain.endswith(base_domain):  # 确保是子域名或相同域名

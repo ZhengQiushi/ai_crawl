@@ -156,7 +156,9 @@ with sync_playwright() as p:
     # url = "https://www.fortleenj.org/common/modules/iCalendar/iCalendar.aspx?feed=calendar&eventID=1391" # ics
     
     # url = "https://www.fortleenj.org/246/Rescue-Company-Number-2"
-    url = "https://macsdefense.com/"
+    # url = "https://macsdefense.com/"
+    # url = "https://www.fortleenj.org/731/Fort-Lee-On-Demand"
+    url = "https://www.creatif.com/livingston-nj/camp-calendar"  # 测试 URL
 
     try:
         if is_valid_url(url):
@@ -172,7 +174,7 @@ with sync_playwright() as p:
                 # Modify HTML content to include the PDF url
                 html_content = f'<html><body><a href="{url}">PDF Document</a></body></html>'
                 remaining_content, images, pdfs = filter_html(html_content, domain=urlparse(url).netloc)
-                print("Modified HTML Content (truncated):\n", remaining_content[:500])  # Print first 500 chars
+                print("Modified HTML Content (truncated):\n", remaining_content[:])  # Print first 500 chars
                 print("PDFs:", pdfs)
 
             else:
@@ -181,7 +183,7 @@ with sync_playwright() as p:
                     page.goto(url, wait_until='networkidle', timeout=60000)
                     html_content = page.content()
                     remaining_content, images, pdfs = filter_html(html_content, domain=urlparse(url).netloc)
-                    print("HTML Content (truncated):\n", remaining_content[:500])  # Print first 500 chars
+                    print("HTML Content (truncated):\n", remaining_content[:])  # Print first 500 chars
                 except Exception as e:
                     print(f"Error loading or processing HTML: {e}")
         else:

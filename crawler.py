@@ -27,7 +27,7 @@ import threading
 import time
 import queue
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class Crawler:
@@ -313,7 +313,7 @@ class Crawler:
             
             try:
                 logger.info(f"Waiting for website workers to complete")
-                await asyncio.wait_for(asyncio.gather(*tasks), timeout=self.timeout * 20)
+                await asyncio.wait_for(asyncio.gather(*tasks), timeout=None)
             except asyncio.TimeoutError:
                 logger.warning("Overall crawl timeout reached")
                 self.shutdown_event.set()
