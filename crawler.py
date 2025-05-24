@@ -155,77 +155,89 @@ class Crawler:
         async def crawl_page(url: str, depth: int):
             """Crawl a single page"""
             start_time = time.time()
-            if depth > self.max_depth or self.shutdown_event.is_set():
-                global_vars.logger.debug(f"[{business_id}] Reached max depth or shutdown signal. Skipping {url} in thread: {threading.current_thread().name}")
-                return
+            try:
+                if depth > self.max_depth or self.shutdown_event.is_set():
+                    global_vars.logger.debug(f"[{business_id}] Reached max depth or shutdown signal. Skipping {url} in thread: {threading.current_thread().name}")
+                    return
 
-            if url in visited_urls:
-                global_vars.logger.debug(f"[{business_id}] Already visited {url}. Skipping in thread: {threading.current_thread().name}")
-                return
-            visited_urls.add(url)
+                if url in visited_urls:
+                    global_vars.logger.debug(f"[{business_id}] Already visited {url}. Skipping in thread: {threading.current_thread().name}")
+                    return
+                visited_urls.add(url)
 
-            should_crawl = True
-            html = None
+                should_crawl = True
+                html = None
 
-            html_info = await self.url_type_checker.is_pdf_url_with_title(url)
-            if html_info.url_type != URLType.HTML:
-                global_vars.logger.info(f"[{business_id}] Skipping doc {html_info.url_type} URL: {url} in thread: {threading.current_thread().name}")
-                should_crawl = False
-            else:
-                global_vars.logger.debug(f"[{business_id}] Fetching {url} with Playwright in thread: {threading.current_thread().name}")
-                html = await self.fetch_with_playwright(url)
-                if not html:
+                html_info = await self.url_type_checker.is_pdf_url_with_title(url)
+                if html_info.url_type == URLType.PDF:
+                    global_vars.logger.info(f"[{business_id}] Fetching pdf {html_info.url_type} URL: {url} in thread: {threading.current_thread().name}")
+                elif html_info.url_type == URLType.DOCX:
+                    global_vars.logger.info(f"[{business_id}] Fetching doc {html_info.url_type} URL: {url} in thread: {threading.current_thread().name}")
+                elif html_info.url_type != URLType.HTML:
+                    global_vars.logger.info(f"[{business_id}] Skipping {html_info.url_type} URL: {url} in thread: {threading.current_thread().name}")
                     should_crawl = False
-                    crawl_stats['failed_urls'] += 1
-                    global_vars.logger.info(f"[{business_id}] Failed parse URL: {url} in thread: {threading.current_thread().name}")
-
-            crawl_stats['crawled_count'] += 1
-            end_time = time.time()
-            fetch_time = end_time - start_time
-            global_vars.logger.info(f"[{business_id}] Crawling {url} at depth {depth} - {website} - Crawled: {crawl_stats['crawled_count']}/{crawl_stats['total_urls']} - Fetch Time: {fetch_time:.2f} seconds in thread: {threading.current_thread().name}")
-
-
-            if should_crawl and html:
-                item = {
-                        'row': {
-                            'url': url,
-                            'content': html,
-                            'title': html_info.title,
-                            'processID': threading.current_thread().name,
-                            'depth': depth,
-                            **{k: provider[k] for k in ['state', 'county', 'googleReview', 
-                                                'googleReviewRating', 'googleReviewCount',
-                                                'domain', 'googleEntry', 'businessFullName', 'businessID', 'website'] if k in provider}
-                        }
-                    }
-
-                # Call pipeline to save the item
-                try:
-                    if item:
-                        pipeline.process_item(item, None) # Use pipeline to save to ES.
-                except Exception as e:
-                    global_vars.logger.error(f"[{business_id}] Error processing item for URL {url}: {e} in thread: {threading.current_thread().name}")
-
-
-                if depth < self.max_depth:
-                    global_vars.logger.debug(f"[{business_id}] Extracting links from {url} in thread: {threading.current_thread().name}")
-                    links = await self.link_extractor.extract_links(html, url)
-                    new_links = [link for link in links if link not in visited_urls and link not in crawl_stats['all_urls']]
-                    
-                    crawl_stats['all_urls'].update(new_links)
-                    crawl_stats['total_urls'] += len(new_links)
-
-                    global_vars.logger.debug(f"[{business_id}] Adding {len(new_links)} new links to queue for {url} in thread: {threading.current_thread().name}")
-                    for i in range(0, len(new_links), self.batch_size):
-                        batch = new_links[i:i + self.batch_size]
-                        task_queue.put((batch, depth + 1))
-
-                        global_vars.logger.debug(f"[{business_id}] Adding {batch} new links to queue for {url} as batch {i} in thread: {threading.current_thread().name}")
                 else:
-                    global_vars.logger.debug(f"[{business_id}] Max depth reached, not extracting links from {url} in thread: {threading.current_thread().name}")
-            else:
-                global_vars.logger.debug(f"[{business_id}] Skipping link extraction for {url} in thread: {threading.current_thread().name}")
+                    global_vars.logger.debug(f"[{business_id}] Fetching {url} with Playwright in thread: {threading.current_thread().name}")
+                    html = await self.fetch_with_playwright(url)
+                    if not html:
+                        should_crawl = False
+                        crawl_stats['failed_urls'] += 1
+                        global_vars.logger.info(f"[{business_id}] Failed parse URL: {url} in thread: {threading.current_thread().name}")
 
+                crawl_stats['crawled_count'] += 1
+                end_time = time.time()
+                fetch_time = end_time - start_time
+                global_vars.logger.info(f"[{business_id}] Crawling {url} at depth {depth} - {website} - Crawled: {crawl_stats['crawled_count']}/{crawl_stats['total_urls']} - Fetch Time: {fetch_time:.2f} seconds in thread: {threading.current_thread().name}")
+
+
+                if should_crawl:
+                    item = {
+                            'row': {
+                                'url': url,
+                                'content': html,
+                                'title': html_info.title,
+                                'processID': threading.current_thread().name,
+                                'depth': depth,
+                                'url_type':  html_info.url_type,
+                                **{k: provider[k] for k in ['state', 'county', 'googleReview', 
+                                                    'googleReviewRating', 'googleReviewCount',
+                                                    'domain', 'googleEntry', 'businessFullName', 'businessID', 'website'] if k in provider}
+                            }
+                        }
+
+                    # Call pipeline to save the item
+                    try:
+                        if item:
+                            pipeline.process_item(item, None) # Use pipeline to save to ES.
+                    except Exception as e:
+                        global_vars.logger.error(f"[{business_id}] Error processing item for URL {url}: {e} in thread: {threading.current_thread().name}")
+
+
+                    if depth < self.max_depth:
+                        global_vars.logger.debug(f"[{business_id}] Extracting links from {url} in thread: {threading.current_thread().name}")
+                        try:
+                            links = await self.link_extractor.extract_links(html, url)
+                            new_links = [link for link in links if link not in visited_urls and link not in crawl_stats['all_urls']]
+                            
+                            crawl_stats['all_urls'].update(new_links)
+                            crawl_stats['total_urls'] += len(new_links)
+
+                            global_vars.logger.debug(f"[{business_id}] Adding {len(new_links)} new links to queue for {url} in thread: {threading.current_thread().name}")
+                            for i in range(0, len(new_links), self.batch_size):
+                                batch = new_links[i:i + self.batch_size]
+                                task_queue.put((batch, depth + 1))
+
+                                global_vars.logger.debug(f"[{business_id}] Adding {batch} new links to queue for {url} as batch {i} in thread: {threading.current_thread().name}")
+                        except Exception as e:
+                            global_vars.logger.error(f"[{business_id}] Error extracting or processing links from URL {url}: {e} in thread: {threading.current_thread().name}")
+
+                    else:
+                        global_vars.logger.debug(f"[{business_id}] Max depth reached, not extracting links from {url} in thread: {threading.current_thread().name}")
+                else:
+                    global_vars.logger.debug(f"[{business_id}] Skipping link extraction for {url} in thread: {threading.current_thread().name}")
+
+            except Exception as e:
+                global_vars.logger.error(f"[{business_id}] An unexpected error occurred while crawling URL {url}: {e} in thread: {threading.current_thread().name}")
         async def thread_worker():
             """Worker that processes URLs from the queue"""
             global_vars.logger.debug(f"Thread worker started in thread: {threading.current_thread().name}")

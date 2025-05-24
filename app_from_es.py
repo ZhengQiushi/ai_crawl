@@ -47,24 +47,24 @@ def get_es_data(es, index_name, state, counties):
             # "term": {
             #     "domain": "gardenstatetennis.com"
             # }
-            "term": {
-                "businessID": 202957
-            }
+            # "term": {
+            #     "businessID": 202957
+            # }
             # "bool": {
             #     "must": [
             #         {"bool": {"should": county_matches}}  # 使用 should 来匹配任何一个 county
             #     ]
             # }
 
-            # "bool": {
-            #     "must": [
-            #         {
-            #             "exists": {
-            #                 "field": "summerCampPages"
-            #             }
-            #         }
-            #     ]
-            # }
+            "bool": {
+                "must": [
+                    {
+                        "exists": {
+                            "field": "summerCampPages"
+                        }
+                    }
+                ]
+            }
             # "match_all": {
 
             # }
@@ -227,8 +227,8 @@ async def main():
 
         global_vars.logger.error(f"开始重试, 第 {i} 次，重试长度 {len(combined_data)}")
         crawler = Crawler(
-            max_processes=1,
-            max_concurrent_per_thread=16,
+            max_processes=4,
+            max_concurrent_per_thread=8,
             max_depth=2,
             timeout=10,
             batch_size=5,

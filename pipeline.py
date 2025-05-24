@@ -14,7 +14,7 @@ from twisted.internet import defer, threads
 import threading
 import copy
 import datetime
-
+from url_type_checker import *
 class CsvPipeline:
     def __init__(self):
 
@@ -40,6 +40,14 @@ class CsvPipeline:
         return item
     
     def filter_html(self, html, domain = ''):
+        # 提取图片信息并保存到列表
+        images = []
+        pdf_links = []
+        docx_links = []
+        body = ""
+
+        if not html:
+            return str(body), images, pdf_links, docx_links
         soup = BeautifulSoup(html, 'lxml')
         if not soup.body:
             soup = BeautifulSoup(f"<body>{html}</body>", "lxml")
@@ -76,8 +84,7 @@ class CsvPipeline:
                 url = urljoin(f"http://{domain}", url)
             return url
 
-        # 提取图片信息并保存到列表
-        images = []
+
         for img in body.find_all('img'):
             if 'src' in img.attrs:  # 确保<img>标签有src属性
                 img_url = img['src']
@@ -90,20 +97,26 @@ class CsvPipeline:
                 images.append(img_url)
             img.decompose()
         
-        pdf_links = []
 
         for a_tag in soup.find_all('a', href=True):  # 查找所有具有 href 属性的 <a> 标签
             href = a_tag['href']
             if href and '.pdf' in href.lower():  # 检查 href 是否包含 "pdf" （不区分大小写）
                 pdf_url = pure_link(href)
                 pdf_links.append(pdf_url)
-        return str(body), images, pdf_links
+
+        for a_tag in soup.find_all('a', href=True):  # 查找所有具有 href 属性的 <a> 标签
+            href = a_tag['href']
+            if href and ('.doc' in href.lower() or '.docx' in href.lower()):  # 检查 href 是否包含 "doc" （不区分大小写）
+                doc_url = pure_link(href)
+                docx_links.append(doc_url)
+        return str(body), images, pdf_links, docx_links
 
     def write(self, item):
         # 生成文档ID
         doc_id = item['row']['businessID']
         # 如果 content 是空字符串，则构造一个不包含 pages 的文档
-        if not item['row']['content'] or item['row']['content'] == "":
+        is_empty_page = (not item['row']['content'] or item['row']['content'] == "") and item['row']['url_type'] == URLType.HTML
+        if is_empty_page:
             es_doc = {
                 'doc_id': doc_id,
                 'script': {
@@ -123,22 +136,29 @@ class CsvPipeline:
                 }
             }
         else:
-            remaining_content, img_urls, pdf_urls = self.filter_html(item['row']['content'], item['row']['domain'])
+            remaining_content, img_urls, pdf_urls, docx_urls = self.filter_html(item['row']['content'], item['row']['domain'])
             if item['row']['depth'] == 0:
                 item['row']['content'] = self.md_generator.generate_markdown(item['row']['content'], item['row']['url']).raw_markdown
             else:
                 item['row']['content'] = self.md_generator.generate_markdown(remaining_content, item['row']['url']).raw_markdown
 
+            if URLType.PDF == item['row']['url_type']:
+                pdf_urls.append(item['row']['url'])
+            elif URLType.DOCX == item['row']['url_type']:
+                docx_urls.append(item['row']['url'])
+
             item['row']['img_urls'] = sorted(list(set(img_urls)))
             item['row']['pdf_urls'] = sorted(list(set(pdf_urls)))
+            item['row']['doc_urls'] = sorted(list(set(docx_urls)))
 
             # 生成内容哈希值
             content_string = item['row']['content']
             image_string = ''.join(item['row']['img_urls'])  # 将图片链接列表转换为字符串
             pdf_string = ''.join(item['row']['pdf_urls'])    # 将 PDF 链接列表转换为字符串
+            docx_string = ''.join(item['row']['doc_urls'])  # 将 DOCX 链接列表转换为字符串
 
             # 将内容、图片链接、PDF 链接拼接在一起
-            combined_string = content_string + image_string + pdf_string + "aaa"
+            combined_string = content_string + image_string + pdf_string + docx_string
 
             # 计算哈希值
             content_hash = hashlib.md5(combined_string.encode()).hexdigest()
@@ -164,6 +184,7 @@ class CsvPipeline:
                                     page.title = params.title;
                                     page.content = params.content;
                                     page.img_urls = params.img_urls;
+                                    page.doc_urls = params.doc_urls;
                                     page.pdf_urls = params.pdf_urls;
                                     page.content_hash = params.content_hash;
                                     page.last_modified = params.current_time;
@@ -178,6 +199,7 @@ class CsvPipeline:
                                 'title': params.title,
                                 'content': params.content,
                                 'img_urls': params.img_urls,
+                                'doc_urls': params.doc_urls,
                                 'pdf_urls': params.pdf_urls,
                                 'content_hash': params.content_hash,
                                 'last_modified': params.current_time
@@ -194,6 +216,7 @@ class CsvPipeline:
                         'title': item['row']['title'],
                         'content': item['row']['content'],
                         'img_urls': item['row']['img_urls'],
+                        'doc_urls': item['row']['doc_urls'],
                         'pdf_urls': item['row']['pdf_urls'],
                         'content_hash': content_hash,
                         'current_time': int(time.time() * 1000),  # 当前时间戳
@@ -206,6 +229,7 @@ class CsvPipeline:
                         'title': item['row']['title'],
                         'content': item['row']['content'],
                         'img_urls': item['row']['img_urls'],
+                        'doc_urls': item['row']['doc_urls'],
                         'pdf_urls': item['row']['pdf_urls'],
                         'content_hash': content_hash,
                         'last_modified': int(time.time() * 1000)
@@ -224,7 +248,7 @@ class CsvPipeline:
         # if len(self._buffer) >= self.batch_size:
         self._bulk_write(es_doc, item)
         
-        if not item['row']['content'] or item['row']['content'] == "":
+        if is_empty_page:
             self.logger.warning(f"empty pages: {item['row']['businessID']}")
         else:
             self.logger.info(f"proc {item['row']['processID']} 完成写入, depth={item['row']['depth']}, businessID={item['row']['businessID']}, url={item['row']['url']}")

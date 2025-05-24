@@ -16,29 +16,40 @@ from url_type_checker import *
 from crawler import *
 from enum import Enum
 
-
-
-async def example_callback(url: str, html: str):
-    """示例回调函数，简单保存页面"""
-    # if "https://www.creatif.com/livingston-nj/camp-calendar" in url:
-    #     print(html)
-    print(f"Processed {url}, length: {len(html)}")
-
+import global_vars
+import argparse
+import logging, multiprocessing
 
 async def main():
+    parser = argparse.ArgumentParser(description='Run the server.')
+    parser.add_argument('--County', required=True, type=str, help='Comma-separated list of Counties')
+    parser.add_argument('--State', required=True, type=str, help='State')
+    parser.add_argument('--Num', required=True, type=str, help='Number of items to retry')
+    parser.add_argument('--Config', required=True, type=str, help='Configuration file path')
+    args = parser.parse_args()
+
+    global_vars.init_globals(args.Config)
+
     crawler = Crawler(
         max_processes=1,
         max_concurrent_per_thread=1,
-        max_depth=2,
+        max_depth=0,
         timeout=10,
         batch_size=5,
         max_retries=3
     )
     
     start_urls = [
+        {
+            "businessID": 204454,
+            "businessFullName": "Fort Lee Borough",
+            "domain": "fortleenj.org",
+            # "website": "https://www.fortleenj.org/DocumentCenter/View/5453/Business-Registration-081522-PDF"
+            "website": "https://www.fortleenj.org/DocumentCenter/View/4156/FEMA-Assistance-for-NJ-Survivors-Affected-by-Hurricane-Ida-PDF"
+        }
         # "https://www.creatif.com/livingston-nj/",
         # "https://www.fortleenj.org",
-        "http://www.countrysidechildcarenj.com/",
+        # "http://www.countrysidechildcarenj.com/",
         # "http://grochowiczfarms.com",
         # "http://baseballrubbingmud.com/",
         # "https://macsdefense.com/",
@@ -46,7 +57,7 @@ async def main():
         # "https://www.frogrentscanoeskayaks.com/",
     ]
     
-    await crawler.crawl_website(start_urls, example_callback)
+    await crawler.crawl_website(start_urls)
 
 
 if __name__ == "__main__":
