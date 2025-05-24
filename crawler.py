@@ -14,7 +14,7 @@ import requests
 from link_extractor import LinkExtractor
 from url_type_checker import *
 from enum import Enum
-
+import queue
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -27,21 +27,24 @@ class Crawler:
 
     def __init__(
         self,
-        max_threads: int = 4,
+        max_processes: int = 4,
         max_concurrent_per_thread: int = 10,
         max_depth: int = 3,
         timeout: int = 30,
+        batch_size: int = 5 # Added batch size
     ):
-        self.max_threads = max_threads
+        self.max_processes = max_processes
         self.max_concurrent_per_thread = max_concurrent_per_thread
         self.max_depth = max_depth
         self.timeout = timeout
+        self.batch_size = batch_size
         self.visited_urls: Set[str] = set()
         self.thread_local = threading.local()
         self.crawl_stats: Dict[str, Dict] = {}  # 存储每个网站的爬取统计信息
         self.lock = threading.Lock() # add lock
         self.link_extractor = LinkExtractor()
         self.url_type_checker = URLTypeChecker()
+        self.task_queue = queue.Queue() # queue for urls
 
     async def init_thread_resources(self):
         """为每个线程初始化资源"""
@@ -125,65 +128,96 @@ class Crawler:
                 with self.lock:
                     self.crawl_stats[website]['total_urls'] += len(new_links)
 
-                tasks = [self.crawl_page(link, depth + 1, callback, website) for link in new_links]
-                await asyncio.gather(*tasks, return_exceptions=True)  # 添加return_exceptions=True
+                # Enqueue the new links in batches
+                for i in range(0, len(new_links), self.batch_size):
+                    batch = new_links[i:i + self.batch_size]
+                    self.task_queue.put((batch, depth + 1, callback, website))
 
-    async def _thread_worker(self, url: str, callback: callable, website: str):
-        """单个线程的工作函数 - 只处理单个URL"""
+    async def _thread_worker(self, website: str):
+        """线程工作函数 - 从队列中获取URL进行处理"""
         await self.init_thread_resources()
         try:
-            await self.crawl_page(url, 0, callback, website)
+            while True:
+                batch, depth, callback, website = self.task_queue.get()
+                try:
+                    tasks = [self.crawl_page(url, depth, callback, website) for url in batch]
+                    await asyncio.gather(*tasks, return_exceptions=True)  # 并发处理一批URL
+                except Exception as e:
+                    logger.error(f"Error processing batch of URLs: {e}")
+                finally:
+                    self.task_queue.task_done()
         except Exception as e:
-            logger.error(f"Error processing {url}: {e}")
+            logger.error(f"Thread worker error: {e}")
         finally:
             await self.close_thread_resources()
 
+    async def website_process(self, start_url: str, callback: callable):
+        """
+        处理单个网站的主流程
+
+        :param start_url: 网站的起始URL
+        :param callback: 处理每个页面的回调函数
+        """
+        website = urlparse(start_url).netloc
+
+        # 初始化统计数据
+        with self.lock:
+            self.crawl_stats[website] = {
+                'start_time': time.time(),
+                'total_urls': 1,  # 初始URL算一个
+                'crawled_count': 0,
+                'all_urls': {start_url},
+                'total_fetch_time': 0.0
+            }
+        
+        # 将起始URL放入任务队列
+        self.task_queue.put(([start_url], 0, callback, website))
+
+        # 创建线程池，用于处理URL
+        with ThreadPoolExecutor(max_workers=self.max_concurrent_per_thread) as executor:
+            loop = asyncio.get_event_loop()
+            tasks = [loop.run_in_executor(executor, lambda: asyncio.new_event_loop().run_until_complete(self._thread_worker(website))) for _ in range(self.max_concurrent_per_thread)]
+
+            # 等待所有任务完成
+            await asyncio.gather(*tasks)
+        
+        # 等待队列所有任务完成
+        self.task_queue.join()
+
+
+        # 输出统计信息
+        end_time = time.time()
+        total_time = end_time - self.crawl_stats[website]['start_time']
+        average_time = total_time / self.crawl_stats[website]['crawled_count'] if self.crawl_stats[website]['crawled_count'] else 0
+
+        logger.info(f"Crawling statistics for {website}:")
+        logger.info(f"  Total time: {total_time:.2f} seconds")
+        logger.info(f"  Total URLs crawled: {self.crawl_stats[website]['crawled_count']}")
+        logger.info(f"  Total URLs found: {self.crawl_stats[website]['total_urls']}")
+        logger.info(f"  Average time per page: {average_time:.2f} seconds")
+
+
     async def crawl_website(self, start_urls: List[str], callback: callable):
         """
-        主爬取方法
-        
+        主爬取方法：为每个网站分配一个进程
+
         :param start_urls: 起始URL列表
         :param callback: 处理每个页面的回调函数，接收(url, html)参数
         """
-        # 初始化统计数据
-        for url in start_urls:
-            website = urlparse(url).netloc
-            with self.lock:
-                self.crawl_stats[website] = {
-                    'start_time': time.time(),
-                    'total_urls': 1,  # 初始URL算一个
-                    'crawled_count': 0,
-                    'all_urls': set(start_urls),
-                    'total_fetch_time': 0.0
-                }
-        
-        # 创建线程池
-        with ThreadPoolExecutor(max_workers=self.max_threads) as executor:
+        # 创建网站进程池
+        with ThreadPoolExecutor(max_workers=self.max_processes) as executor:
             loop = asyncio.get_event_loop()
             tasks = []
-            
-            # 为每个URL创建一个线程任务
+
+            # 为每个网站创建一个进程任务
             for url in start_urls:
-                website = urlparse(url).netloc # get netloc
                 task = loop.run_in_executor(
                     executor,
-                    lambda u=url, w=website: asyncio.new_event_loop().run_until_complete(
-                        self._thread_worker(u, callback, w)
+                    lambda u=url: asyncio.new_event_loop().run_until_complete(
+                        self.website_process(u, callback)
                     )
                 )
                 tasks.append(task)
             
             # 等待所有任务完成
             await asyncio.gather(*tasks)
-
-        # 输出统计信息
-        for website, stats in self.crawl_stats.items():
-            end_time = time.time()
-            total_time = end_time - stats['start_time']
-            average_time = total_time / stats['crawled_count'] if stats['crawled_count'] else 0
-            
-            logger.info(f"Crawling statistics for {website}:")
-            logger.info(f"  Total time: {total_time:.2f} seconds")
-            logger.info(f"  Total URLs crawled: {stats['crawled_count']}")
-            logger.info(f"  Total URLs found: {stats['total_urls']}") # updated urls
-            logger.info(f"  Average time per page: {average_time:.2f} seconds")

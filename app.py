@@ -25,10 +25,11 @@ async def example_callback(url: str, html: str):
 
 async def main():
     crawler = Crawler(
-        max_threads=4,
-        max_concurrent_per_thread=10,
+        max_processes=1,
+        max_concurrent_per_thread=8,
         max_depth=2,
-        timeout=120
+        timeout=120,
+        batch_size=10
     )
     
     start_urls = [
