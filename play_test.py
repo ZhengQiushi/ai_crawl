@@ -155,11 +155,13 @@ with sync_playwright() as p:
     # url = "https://www.fortleenj.org/DocumentCenter/View/4156/FEMA-Assistance-for-NJ-Survivors-Affected-by-Hurricane-Ida-PDF" # doc
     # url = "https://www.fortleenj.org/common/modules/iCalendar/iCalendar.aspx?feed=calendar&eventID=1391" # ics
     
-    url = "https://www.fortleenj.org/246/Rescue-Company-Number-2"
-    
+    # url = "https://www.fortleenj.org/246/Rescue-Company-Number-2"
+    url = "https://macsdefense.com/"
+
     try:
         if is_valid_url(url):
-            if is_pdf_url(url):
+            url_type = is_pdf_url(url)
+            if url_type == URLType.PDF:
                 # # 处理 PDF 文件
                 # pdf_text = extract_text_from_pdf_url(url)
                 # if pdf_text:

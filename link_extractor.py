@@ -21,9 +21,9 @@ class LinkExtractor:
                             '.mp4', '.avi', '.mov', '.ics', '.ical']
 
     async def extract_links(self, html: str, base_url: str) -> List[str]:
-        """从HTML中提取链接，过滤指定扩展名，并且只返回子域名链接"""
+        """从HTML中提取链接，过滤指定扩展名，并且只返回子域名链接，并去重"""
         soup = BeautifulSoup(html, 'html.parser')
-        links = []
+        links = set()  # 使用集合来去重
         base_domain = urlparse(base_url).netloc
 
         for a in soup.find_all('a', href=True):
@@ -37,6 +37,6 @@ class LinkExtractor:
 
                 # 检查是否为排除的扩展名
                 if not any(absolute_url.lower().endswith(ext) for ext in self.excluded_extensions):
-                    links.append(absolute_url)
+                    links.add(absolute_url)
 
-        return links
+        return list(links)  # 返回列表

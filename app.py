@@ -25,16 +25,23 @@ async def example_callback(url: str, html: str):
 
 async def main():
     crawler = Crawler(
-        max_processes=1,
+        max_processes=4,
         max_concurrent_per_thread=8,
         max_depth=2,
-        timeout=120,
-        batch_size=10
+        timeout=10,
+        batch_size=5,
+        max_retries=3
     )
     
     start_urls = [
-        # "https://www.creatif.com",
-        "https://www.fortleenj.org"
+        "https://www.creatif.com",
+        "https://www.fortleenj.org",
+        "http://www.countrysidechildcarenj.com/",
+        "http://grochowiczfarms.com",
+        "http://baseballrubbingmud.com/",
+        "https://macsdefense.com/",
+        "https://www.wssweddings.com/",
+        "https://www.frogrentscanoeskayaks.com/",
     ]
     
     await crawler.crawl_website(start_urls, example_callback)
