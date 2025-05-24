@@ -21,17 +21,13 @@ logger = logging.getLogger(__name__)
 
 
 class Crawler:
-    """
-    Crawls web pages using Playwright and aiohttp.
-    """
-
     def __init__(
         self,
         max_processes: int = 4,
         max_concurrent_per_thread: int = 10,
         max_depth: int = 3,
         timeout: int = 30,
-        batch_size: int = 5 # Added batch size
+        batch_size: int = 5
     ):
         self.max_processes = max_processes
         self.max_concurrent_per_thread = max_concurrent_per_thread
@@ -40,14 +36,15 @@ class Crawler:
         self.batch_size = batch_size
         self.visited_urls: Set[str] = set()
         self.thread_local = threading.local()
-        self.crawl_stats: Dict[str, Dict] = {}  # 存储每个网站的爬取统计信息
-        self.lock = threading.Lock() # add lock
+        self.crawl_stats: Dict[str, Dict] = {}
+        self.lock = threading.Lock()
         self.link_extractor = LinkExtractor()
         self.url_type_checker = URLTypeChecker()
-        self.task_queue = queue.Queue() # queue for urls
+        self.task_queue = queue.Queue()
+        self.shutdown_event = threading.Event()  # Add shutdown event
 
     async def init_thread_resources(self):
-        """为每个线程初始化资源"""
+        """Initialize resources for each thread"""
         if not hasattr(self.thread_local, 'playwright'):
             self.thread_local.playwright = await async_playwright().start()
             self.thread_local.browser = await self.thread_local.playwright.chromium.launch(headless=True)
@@ -57,7 +54,7 @@ class Crawler:
             self.thread_local.session = aiohttp.ClientSession()
 
     async def close_thread_resources(self):
-        """关闭线程的资源"""
+        """Close thread resources"""
         if hasattr(self.thread_local, 'context'):
             await self.thread_local.context.close()
         if hasattr(self.thread_local, 'browser'):
@@ -68,7 +65,7 @@ class Crawler:
             await self.thread_local.session.close()
 
     async def fetch_with_playwright(self, url: str) -> str:
-        """使用Playwright获取页面内容，并记录时间"""
+        """Fetch page content with Playwright"""
         start_time = time.time()
         page = await self.thread_local.context.new_page()
         try:
@@ -85,27 +82,26 @@ class Crawler:
             await page.close()
 
     async def crawl_page(self, url: str, depth: int, callback: callable, website: str):
-        """爬取单个页面"""
-        if depth > self.max_depth:
+        """Crawl a single page"""
+        if depth > self.max_depth or self.shutdown_event.is_set():
             return
 
         with self.lock:
             if url in self.visited_urls:
                 return
-
             self.visited_urls.add(url)
 
         should_crawl = True
-        html = None  # Initialize html to None
+        html = None
 
         html_type = await self.url_type_checker.is_pdf_url(url)
         if html_type != URLType.HTML:
             logger.info(f"Skipping doc {html_type} URL: {url}")
-            should_crawl = False  # Set flag to indicate skipping the crawling
+            should_crawl = False
         else:
             html = await self.fetch_with_playwright(url)
             if not html:
-                should_crawl = False  # Do not proceed with crawling
+                should_crawl = False
 
         with self.lock:
             self.crawl_stats[website]['crawled_count'] += 1
@@ -114,7 +110,7 @@ class Crawler:
 
         logger.info(f"Crawling {url} at depth {depth} - {website} - Crawled: {crawled_count}/{total_to_crawl}")
 
-        if should_crawl and html:  # Only proceed if NOT a PDF and HTML exists
+        if should_crawl and html:
             await callback(url, html)
 
             if depth < self.max_depth:
@@ -128,88 +124,96 @@ class Crawler:
                 with self.lock:
                     self.crawl_stats[website]['total_urls'] += len(new_links)
 
-                # Enqueue the new links in batches
                 for i in range(0, len(new_links), self.batch_size):
                     batch = new_links[i:i + self.batch_size]
                     self.task_queue.put((batch, depth + 1, callback, website))
 
     async def _thread_worker(self, website: str):
-        """线程工作函数 - 从队列中获取URL进行处理"""
+        """Thread worker function"""
         await self.init_thread_resources()
         try:
-            while True:
-                batch, depth, callback, website = self.task_queue.get()
+            while not self.shutdown_event.is_set():  # Check shutdown flag
                 try:
-                    tasks = [self.crawl_page(url, depth, callback, website) for url in batch]
-                    await asyncio.gather(*tasks, return_exceptions=True)  # 并发处理一批URL
-                except Exception as e:
-                    logger.error(f"Error processing batch of URLs: {e}")
-                finally:
-                    self.task_queue.task_done()
+                    # Add timeout to queue.get to prevent deadlock
+                    batch, depth, callback, website = self.task_queue.get(timeout=1.0)
+                    try:
+                        tasks = [self.crawl_page(url, depth, callback, website) for url in batch]
+                        await asyncio.gather(*tasks, return_exceptions=True)
+                    except Exception as e:
+                        logger.error(f"Error processing batch of URLs: {e}")
+                    finally:
+                        self.task_queue.task_done()
+                except queue.Empty:
+                    # Check if we should exit
+                    with self.lock:
+                        stats = self.crawl_stats.get(website, {})
+                        if stats.get('crawled_count', 0) >= stats.get('total_urls', 1):
+                            break
+                    continue
         except Exception as e:
             logger.error(f"Thread worker error: {e}")
         finally:
             await self.close_thread_resources()
 
     async def website_process(self, start_url: str, callback: callable):
-        """
-        处理单个网站的主流程
-
-        :param start_url: 网站的起始URL
-        :param callback: 处理每个页面的回调函数
-        """
+        """Process a single website"""
         website = urlparse(start_url).netloc
 
-        # 初始化统计数据
         with self.lock:
             self.crawl_stats[website] = {
                 'start_time': time.time(),
-                'total_urls': 1,  # 初始URL算一个
+                'total_urls': 1,
                 'crawled_count': 0,
                 'all_urls': {start_url},
                 'total_fetch_time': 0.0
             }
         
-        # 将起始URL放入任务队列
         self.task_queue.put(([start_url], 0, callback, website))
 
-        # 创建线程池，用于处理URL
         with ThreadPoolExecutor(max_workers=self.max_concurrent_per_thread) as executor:
             loop = asyncio.get_event_loop()
-            tasks = [loop.run_in_executor(executor, lambda: asyncio.new_event_loop().run_until_complete(self._thread_worker(website))) for _ in range(self.max_concurrent_per_thread)]
-
-            # 等待所有任务完成
-            await asyncio.gather(*tasks)
+            tasks = []
+            
+            # Create worker tasks
+            for _ in range(self.max_concurrent_per_thread):
+                task = loop.run_in_executor(
+                    executor,
+                    lambda: asyncio.new_event_loop().run_until_complete(self._thread_worker(website))
+                )
+                tasks.append(task)
+            
+            # Wait for all tasks to complete or timeout
+            try:
+                await asyncio.wait_for(asyncio.gather(*tasks), timeout=self.timeout * 10)
+            except asyncio.TimeoutError:
+                logger.warning(f"Timeout reached for website {website}")
+                self.shutdown_event.set()  # Signal shutdown
+            
+            # Clean up any remaining tasks
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
         
-        # 等待队列所有任务完成
-        self.task_queue.join()
-
-
-        # 输出统计信息
+        # Final statistics
         end_time = time.time()
         total_time = end_time - self.crawl_stats[website]['start_time']
-        average_time = total_time / self.crawl_stats[website]['crawled_count'] if self.crawl_stats[website]['crawled_count'] else 0
+        crawled_count = self.crawl_stats[website]['crawled_count']
+        average_time = total_time / crawled_count if crawled_count else 0
 
-        logger.info(f"Crawling statistics for {website}:")
+        logger.info(f"\nCrawling statistics for {website}:")
         logger.info(f"  Total time: {total_time:.2f} seconds")
-        logger.info(f"  Total URLs crawled: {self.crawl_stats[website]['crawled_count']}")
+        logger.info(f"  Total URLs crawled: {crawled_count}")
         logger.info(f"  Total URLs found: {self.crawl_stats[website]['total_urls']}")
         logger.info(f"  Average time per page: {average_time:.2f} seconds")
 
-
     async def crawl_website(self, start_urls: List[str], callback: callable):
-        """
-        主爬取方法：为每个网站分配一个进程
-
-        :param start_urls: 起始URL列表
-        :param callback: 处理每个页面的回调函数，接收(url, html)参数
-        """
-        # 创建网站进程池
+        """Main crawl method"""
+        self.shutdown_event.clear()  # Reset shutdown flag
+        
         with ThreadPoolExecutor(max_workers=self.max_processes) as executor:
             loop = asyncio.get_event_loop()
             tasks = []
 
-            # 为每个网站创建一个进程任务
             for url in start_urls:
                 task = loop.run_in_executor(
                     executor,
@@ -219,5 +223,13 @@ class Crawler:
                 )
                 tasks.append(task)
             
-            # 等待所有任务完成
-            await asyncio.gather(*tasks)
+            try:
+                await asyncio.wait_for(asyncio.gather(*tasks), timeout=self.timeout * 20)
+            except asyncio.TimeoutError:
+                logger.warning("Overall crawl timeout reached")
+                self.shutdown_event.set()
+            finally:
+                # Ensure all tasks are cancelled if they're still running
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
