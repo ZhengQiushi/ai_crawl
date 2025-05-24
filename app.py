@@ -27,8 +27,8 @@ async def example_callback(url: str, html: str):
 
 async def main():
     crawler = Crawler(
-        max_processes=4,
-        max_concurrent_per_thread=8,
+        max_processes=1,
+        max_concurrent_per_thread=1,
         max_depth=2,
         timeout=10,
         batch_size=5,
@@ -36,9 +36,9 @@ async def main():
     )
     
     start_urls = [
-        "https://www.creatif.com/livingston-nj/",
+        # "https://www.creatif.com/livingston-nj/",
         # "https://www.fortleenj.org",
-        # "http://www.countrysidechildcarenj.com/",
+        "http://www.countrysidechildcarenj.com/",
         # "http://grochowiczfarms.com",
         # "http://baseballrubbingmud.com/",
         # "https://macsdefense.com/",

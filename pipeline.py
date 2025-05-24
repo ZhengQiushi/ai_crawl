@@ -36,12 +36,6 @@ class CsvPipeline:
         # self.logger.info("new pipeline!!!")
         self.pipeline_lock = threading.Lock() # 线程锁
     def process_item(self, item, spider):
-        # 使用深拷贝确保完全独立的数据副本
-        item_copy = copy.deepcopy(item)  # 改为深拷贝
-        return threads.deferToThread(self._blocking_save, item_copy)
-
-    def _blocking_save(self, item):
-        # with self.pipeline_lock:  # 在这里加锁
         self.write(item)
         return item
     
@@ -112,7 +106,6 @@ class CsvPipeline:
         if not item['row']['content'] or item['row']['content'] == "":
             es_doc = {
                 'doc_id': doc_id,
-                'job_id': item['row']['job_id'],
                 'script': {
                     "source": """
                         if (ctx._source.pages == null) {
@@ -123,19 +116,13 @@ class CsvPipeline:
                     "params": {}
                 },
                 'upsert': {
-                    'businessFullName': item['row']['businessFullName'],
-                    'businessID': item['row']['businessID'],
-                    'website': item['row']['website'],
                     'pages': [],  # 保留 pages 字段为空
                     **{k: item['row'][k] for k in ['state', 'county', 'googleReview', 
                                                 'googleReviewRating', 'googleReviewCount',
-                                                'domain', 'googleEntry'] if k in item['row']}
+                                                'domain', 'googleEntry', 'businessFullName', 'businessID', 'website'] if k in item['row']}
                 }
             }
         else:
-            if item['row']['url'] == "https://www.unioncatholic.org/parents":
-                print(item['row']['content'])
-            print(item['row']['url'])
             remaining_content, img_urls, pdf_urls = self.filter_html(item['row']['content'], item['row']['domain'])
             if item['row']['depth'] == 0:
                 item['row']['content'] = self.md_generator.generate_markdown(item['row']['content'], item['row']['url']).raw_markdown
@@ -162,7 +149,6 @@ class CsvPipeline:
             # 构造 Elasticsearch 文档
             es_doc = {
                 'doc_id': doc_id,
-                'job_id': item['row']['job_id'],
                 'script': {
                     "source": """
                         if (ctx._source.pages == null) {
@@ -224,13 +210,10 @@ class CsvPipeline:
                         'content_hash': content_hash,
                         'last_modified': int(time.time() * 1000)
                     }],
-                    'businessFullName': item['row']['businessFullName'],
-                    'businessID': item['row']['businessID'],
-                    'website': item['row']['website'],
                     'refresh_pages_time': current_time_str,
                     **{k: item['row'][k] for k in ['state', 'county', 'googleReview', 
                                                 'googleReviewRating', 'googleReviewCount',
-                                                'domain', 'googleEntry'] if k in item['row']}
+                                                'domain', 'googleEntry', 'businessFullName', 'website', 'businessID'] if k in item['row']}
                 }
             }
         

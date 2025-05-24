@@ -4,7 +4,7 @@ import json
 import logging
 from elasticsearch import Elasticsearch # , AsyncElasticsearch
 from dotenv import dotenv_values
-from kafka_wrapper import KafkaConsumerThread, KafkaProducerWrapper
+
 from scrapy.utils.log import configure_logging
 import threading
 from twisted.internet import threads
@@ -115,8 +115,5 @@ def init_globals(config_file):
 
     # 配置Scrapy日志
     configure_logging(install_root_handler=False)
-
-    # 初始化 Kafka 生产者
-    kafka_producer = KafkaProducerWrapper(config['KAFKA_BOOTSTRAP_SERVERS'], config['KAFKA_PASSWORD'])
 
 

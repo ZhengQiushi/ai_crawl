@@ -4,9 +4,22 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
-    
         {
-            "name": "Python Debugger: Current File",
+            "name": "crawler",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "cwd" :"/home/azureuser/ai_crawl",
+            "console": "integratedTerminal",
+            "args": [
+                "--County", "Morris,Essex,Union,Hudson",
+                "--State", "NewJersey", 
+                "--Num", "100",
+                "--Config", "/home/azureuser/ai_crawl/config.env"
+            ]
+        },
+        {
+            "name": "debug",
             "type": "debugpy",
             "request": "launch",
             "program": "${file}",
