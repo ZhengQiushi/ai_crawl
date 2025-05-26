@@ -47,8 +47,8 @@ def get_es_data(es, index_name, state, counties):
             # "term": {
             #     "domain": "gardenstatetennis.com"
             # }
-            "term": {
-                "businessID": 233740
+            "terms": {
+                "businessID": [240658] # 233740, 202957, 
             }
             # "bool": {
             #     "must": [
@@ -233,9 +233,9 @@ async def main():
             timeout=10,
             batch_size=5,
             max_retries=3,
-            max_pages_per_website=5
+            max_pages_per_website=500
         )
-        await crawler.crawl_website(combined_data)
+        crawler.crawl_website(combined_data)
 
 
 if __name__ == "__main__":
