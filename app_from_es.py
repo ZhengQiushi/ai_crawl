@@ -49,17 +49,17 @@ def get_es_data(es, index_name, state, counties):
             # }
             "terms": {
                 "businessID": [ 240658, 
-                                202957,
-                                233601,
-                                233236,
-                                230235,
-                                231730,
-                                240546,
-                                222043,
-                                235409,
-                                233060,
-                                235818,
-                                237197,
+                                # 202957,
+                                # 233601,
+                                # 233236,
+                                # 230235,
+                                # 231730,
+                                # 240546,
+                                # 222043,
+                                # 235409,
+                                # 233060,
+                                # 235818,
+                                # 237197,
                                 ] # 233740, 202957, 
             }
             # "bool": {
@@ -239,7 +239,7 @@ async def main():
 
         global_vars.logger.error(f"开始重试, 第 {i} 次，重试长度 {len(combined_data)}")
         crawler = Crawler(
-            max_processes=4,
+            max_processes=1,
             max_concurrent_per_thread=8,
             max_depth=2,
             timeout=10,
