@@ -372,7 +372,7 @@ class Crawler:
         while not shutdown_event.is_set():
             try:
                 provider = start_providers_queue.get(timeout=1)  # Changed from get_nowait to get with timeout
-                global_vars.logger.info(f"[{provider['businessID']}] Got website {provider['website']} from queue in process: proc-{os.getpid()}-{threading.current_thread().name}")
+                global_vars.logger.info(f"[{provider['businessID']}] Got website {provider['website']} from queue in process (remaining providers: {start_providers_queue.qsize()} ): proc-{os.getpid()}-{threading.current_thread().name}")
                 loop.run_until_complete(Crawler.process_website(provider, pipeline, 
                                                                 max_depth, 
                                                                 max_pages_per_website,
