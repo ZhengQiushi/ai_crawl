@@ -29,8 +29,6 @@ import queue
 import global_vars
 from pipeline import CsvPipeline
 
-# logging.basicConfig(level=logging.INFO)
-# logger = logging.getLogger(__name__)
 
 class Crawler:
     def __init__(
@@ -40,7 +38,8 @@ class Crawler:
         max_depth: int = 3,
         timeout: int = 30,
         batch_size: int = 5,
-        max_retries: int = 3
+        max_retries: int = 3,
+        max_pages_per_website: int = 500  # New parameter
     ):
         self.max_processes = max_processes
         self.max_concurrent_per_thread = max_concurrent_per_thread
@@ -48,7 +47,8 @@ class Crawler:
         self.timeout = timeout
         self.batch_size = batch_size
         self.max_retries = max_retries
-        
+        self.max_pages_per_website = max_pages_per_website  # Set the limit
+
         # Shared queue for start URLs
         self.start_providers_queue = queue.Queue()
         self.shutdown_event = threading.Event()
@@ -156,8 +156,8 @@ class Crawler:
             """Crawl a single page"""
             start_time = time.time()
             try:
-                if depth > self.max_depth or self.shutdown_event.is_set():
-                    global_vars.logger.debug(f"[{business_id}] Reached max depth or shutdown signal. Skipping {url} in thread: {threading.current_thread().name}")
+                if depth > self.max_depth or len(visited_urls) >= self.max_pages_per_website or self.shutdown_event.is_set():
+                    global_vars.logger.debug(f"[{business_id}] Reached max depth or max pages or shutdown signal. Skipping {url} in thread: {threading.current_thread().name}")
                     return
 
                 if url in visited_urls:
@@ -183,7 +183,7 @@ class Crawler:
                         should_crawl = False
                         crawl_stats['failed_urls'] += 1
                         global_vars.logger.info(f"[{business_id}] Failed parse URL: {url} in thread: {threading.current_thread().name}")
-
+                
                 crawl_stats['crawled_count'] += 1
                 end_time = time.time()
                 fetch_time = end_time - start_time
@@ -213,7 +213,7 @@ class Crawler:
                         global_vars.logger.error(f"[{business_id}] Error processing item for URL {url}: {e} in thread: {threading.current_thread().name}")
 
 
-                    if depth < self.max_depth:
+                    if depth < self.max_depth and crawl_stats['crawled_count'] < self.max_pages_per_website:
                         global_vars.logger.debug(f"[{business_id}] Extracting links from {url} in thread: {threading.current_thread().name}")
                         try:
                             links = await self.link_extractor.extract_links(html, url)
@@ -232,7 +232,7 @@ class Crawler:
                             global_vars.logger.error(f"[{business_id}] Error extracting or processing links from URL {url}: {e} in thread: {threading.current_thread().name}")
 
                     else:
-                        global_vars.logger.debug(f"[{business_id}] Max depth reached, not extracting links from {url} in thread: {threading.current_thread().name}")
+                        global_vars.logger.debug(f"[{business_id}] Max depth or max pages reached, not extracting links from {url} in thread: {threading.current_thread().name}")
                 else:
                     global_vars.logger.debug(f"[{business_id}] Skipping link extraction for {url} in thread: {threading.current_thread().name}")
 
@@ -254,8 +254,8 @@ class Crawler:
                         global_vars.logger.debug(f"Batch processing completed in thread: {threading.current_thread().name}")
                     except queue.Empty:
                         # Check if we should exit
-                        if crawl_stats['crawled_count'] >= crawl_stats['total_urls']:
-                            global_vars.logger.debug(f"Crawled all URLs, exiting thread worker in thread: {threading.current_thread().name}")
+                        if crawl_stats['crawled_count'] >= crawl_stats['total_urls'] or crawl_stats['crawled_count'] >= self.max_pages_per_website:
+                            global_vars.logger.debug(f"Crawled all URLs or reached max pages, exiting thread worker in thread: {threading.current_thread().name}")
                             break
                         global_vars.logger.debug(f"Queue is empty, continuing in thread: {threading.current_thread().name} {crawl_stats['crawled_count']} / {crawl_stats['total_urls']}")
                         continue
@@ -286,7 +286,6 @@ class Crawler:
                 await asyncio.wait_for(asyncio.gather(*tasks), timeout=self.timeout * 100)
             except asyncio.TimeoutError:
                 global_vars.logger.warning(f"[{business_id}] Timeout reached for website {website} in thread: {threading.current_thread().name}")
-                self.shutdown_event.set()
             
             finally:
                 global_vars.logger.info(f"[{business_id}] Cancelling remaining tasks for {website} in thread: {threading.current_thread().name}")

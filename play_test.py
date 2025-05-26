@@ -158,12 +158,12 @@ with sync_playwright() as p:
     # url = "https://www.fortleenj.org/246/Rescue-Company-Number-2"
     # url = "https://macsdefense.com/"
     # url = "https://www.fortleenj.org/731/Fort-Lee-On-Demand"
-    url = "https://www.creatif.com/livingston-nj/camp-calendar"  # 测试 URL
-
+    # url = "https://www.creatif.com/livingston-nj/camp-calendar"  # 测试 URL
+    url = "https://bklanyc.com/"
     try:
-        if is_valid_url(url):
-            url_type = is_pdf_url(url)
-            if url_type == URLType.PDF:
+        if True: # is_valid_url(url):
+            # url_type = is_pdf_url(url)
+            if False: # url_type == URLType.PDF:
                 # # 处理 PDF 文件
                 # pdf_text = extract_text_from_pdf_url(url)
                 # if pdf_text:
@@ -180,7 +180,7 @@ with sync_playwright() as p:
             else:
                 # 处理 HTML 网页
                 try:
-                    page.goto(url, wait_until='networkidle', timeout=60000)
+                    page.goto(url, wait_until='domcontentloaded', timeout=60000)
                     html_content = page.content()
                     remaining_content, images, pdfs = filter_html(html_content, domain=urlparse(url).netloc)
                     print("HTML Content (truncated):\n", remaining_content[:])  # Print first 500 chars

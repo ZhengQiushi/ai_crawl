@@ -47,24 +47,24 @@ def get_es_data(es, index_name, state, counties):
             # "term": {
             #     "domain": "gardenstatetennis.com"
             # }
-            # "term": {
-            #     "businessID": 202957
-            # }
+            "term": {
+                "businessID": 228323
+            }
             # "bool": {
             #     "must": [
             #         {"bool": {"should": county_matches}}  # 使用 should 来匹配任何一个 county
             #     ]
             # }
 
-            "bool": {
-                "must": [
-                    {
-                        "exists": {
-                            "field": "summerCampPages"
-                        }
-                    }
-                ]
-            }
+            # "bool": {
+            #     "must": [
+            #         {
+            #             "exists": {
+            #                 "field": "summerCampPages"
+            #             }
+            #         }
+            #     ]
+            # }
             # "match_all": {
 
             # }
@@ -232,7 +232,8 @@ async def main():
             max_depth=2,
             timeout=10,
             batch_size=5,
-            max_retries=3
+            max_retries=3,
+            max_pages_per_website=5
         )
         await crawler.crawl_website(combined_data)
 
