@@ -65,37 +65,37 @@ class Crawler:
         """Initialize resources for each process"""
         process_local = threading.local()
 
-        global_vars.logger.debug(f"Initializing process resources in process: {threading.get_ident()}")
+        global_vars.logger.debug(f"Initializing process resources in process: proc-{os.getpid()}-{threading.current_thread().name}")
         if not hasattr(process_local, 'playwright'):
-            global_vars.logger.debug(f"Launching Playwright in process: {threading.get_ident()}")
+            global_vars.logger.debug(f"Launching Playwright in process: proc-{os.getpid()}-{threading.current_thread().name}")
             process_local.playwright = await async_playwright().start()
             process_local.browser = await process_local.playwright.chromium.launch(headless=True)
             process_local.context = await process_local.browser.new_context()
-            global_vars.logger.debug(f"Playwright launched successfully in process: {threading.get_ident()}")
+            global_vars.logger.debug(f"Playwright launched successfully in process: proc-{os.getpid()}-{threading.current_thread().name}")
         
         if not hasattr(process_local, 'session'):
-            global_vars.logger.debug(f"Creating aiohttp session in process: {threading.get_ident()}")
+            global_vars.logger.debug(f"Creating aiohttp session in process: proc-{os.getpid()}-{threading.current_thread().name}")
             process_local.session = aiohttp.ClientSession()
-            global_vars.logger.debug(f"aiohttp session created successfully in process: {threading.get_ident()}")
+            global_vars.logger.debug(f"aiohttp session created successfully in process: proc-{os.getpid()}-{threading.current_thread().name}")
         return process_local
 
     @staticmethod
     async def close_process_resources(process_local):
         """Close process resources"""
-        global_vars.logger.debug(f"Closing process resources in process: {threading.get_ident()}")
+        global_vars.logger.debug(f"Closing process resources in process: proc-{os.getpid()}-{threading.current_thread().name}")
         if hasattr(process_local, 'context'):
-            global_vars.logger.debug(f"Closing Playwright context in process: {threading.get_ident()}")
+            global_vars.logger.debug(f"Closing Playwright context in process: proc-{os.getpid()}-{threading.current_thread().name}")
             await process_local.context.close()
         if hasattr(process_local, 'browser'):
-            global_vars.logger.debug(f"Closing Playwright browser in process: {threading.get_ident()}")
+            global_vars.logger.debug(f"Closing Playwright browser in process: proc-{os.getpid()}-{threading.current_thread().name}")
             await process_local.browser.close()
         if hasattr(process_local, 'playwright'):
-            global_vars.logger.debug(f"Stopping Playwright in process: {threading.get_ident()}")
+            global_vars.logger.debug(f"Stopping Playwright in process: proc-{os.getpid()}-{threading.current_thread().name}")
             await process_local.playwright.stop()
         if hasattr(process_local, 'session'):
-            global_vars.logger.debug(f"Closing aiohttp session in process: {threading.get_ident()}")
+            global_vars.logger.debug(f"Closing aiohttp session in process: proc-{os.getpid()}-{threading.current_thread().name}")
             await process_local.session.close()
-        global_vars.logger.debug(f"process resources closed successfully in process: {threading.get_ident()}")
+        global_vars.logger.debug(f"process resources closed successfully in process: proc-{os.getpid()}-{threading.current_thread().name}")
 
     @staticmethod
     async def fetch_with_playwright(url: str, process_local: threading.local, max_retries: int, timeout: int) -> str:
@@ -109,7 +109,7 @@ class Crawler:
             page = await process_local.context.new_page()  # No user_agent here.
 
             try:
-                global_vars.logger.debug(f"Attempt {attempt + 1}/{max_retries} for {url} in process: {threading.get_ident()}")
+                global_vars.logger.debug(f"Attempt {attempt + 1}/{max_retries} for {url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
 
                 # Attempt initial load if not already successful
                 if not load_result:
@@ -134,14 +134,14 @@ class Crawler:
                 
                 break
             except Exception as e:
-                global_vars.logger.error(f"Error fetching {url} (attempt {attempt + 1}): {e} in process: {threading.get_ident()}")
+                global_vars.logger.error(f"Error fetching {url} (attempt {attempt + 1}): {e} in process: proc-{os.getpid()}-{threading.current_thread().name}")
                 if attempt == max_retries - 1:  # Last attempt failed
                     break  # Exit the loop; return "" after finally
 
             finally:
                 await page.close()
         
-        global_vars.logger.debug(f"Playwright fetch time for {url} | Load: {load_result}, NetworkIdle: {networkidle_result} in process: {threading.get_ident()}")
+        global_vars.logger.debug(f"Playwright fetch time for {url} | Load: {load_result}, NetworkIdle: {networkidle_result} in process: proc-{os.getpid()}-{threading.current_thread().name}")
 
         return content  # Return empty string after all retries failed
 
@@ -169,22 +169,18 @@ class Crawler:
             'all_urls': {start_url}
         }
 
-        process_local = await Crawler.init_process_resources() #moved inside process_website
-
-
-        async def crawl_page(url: str, depth: int):
+        async def crawl_page(url: str, depth: int, process_local_thread):
             """Crawl a single page"""
             start_time = time.time()
-            process_local_thread = threading.local()
-            process_local_thread = await Crawler.init_process_resources()
+
 
             try:
                 if depth > max_depth or len(visited_urls) >= max_pages_per_website or shutdown_event.is_set():
-                    global_vars.logger.debug(f"[{business_id}] Reached max depth or max pages or shutdown signal. Skipping {url} in process: {threading.get_ident()}")
+                    global_vars.logger.debug(f"[{business_id}] Reached max depth or max pages or shutdown signal. Skipping {url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
                     return
 
                 if url in visited_urls:
-                    global_vars.logger.debug(f"[{business_id}] Already visited {url}. Skipping in process: {threading.get_ident()}")
+                    global_vars.logger.debug(f"[{business_id}] Already visited {url}. Skipping in process: proc-{os.getpid()}-{threading.current_thread().name}")
                     return
                 visited_urls.add(url)
 
@@ -193,24 +189,24 @@ class Crawler:
 
                 html_info = await url_type_checker.is_pdf_url_with_title(url)
                 if html_info.url_type == URLType.PDF:
-                    global_vars.logger.info(f"[{business_id}] Fetching pdf {html_info.url_type} URL: {url} in process: {threading.get_ident()}")
+                    global_vars.logger.info(f"[{business_id}] Fetching pdf {html_info.url_type} URL: {url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
                 elif html_info.url_type == URLType.DOCX:
-                    global_vars.logger.info(f"[{business_id}] Fetching doc {html_info.url_type} URL: {url} in process: {threading.get_ident()}")
+                    global_vars.logger.info(f"[{business_id}] Fetching doc {html_info.url_type} URL: {url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
                 elif html_info.url_type != URLType.HTML:
-                    global_vars.logger.info(f"[{business_id}] Skipping {html_info.url_type} URL: {url} in process: {threading.get_ident()}")
+                    global_vars.logger.info(f"[{business_id}] Skipping {html_info.url_type} URL: {url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
                     should_crawl = False
                 else:
-                    global_vars.logger.debug(f"[{business_id}] Fetching {url} with Playwright in process: {threading.get_ident()}")
+                    global_vars.logger.debug(f"[{business_id}] Fetching {url} with Playwright in process: proc-{os.getpid()}-{threading.current_thread().name}")
                     html = await Crawler.fetch_with_playwright(url, process_local_thread, max_retries, timeout)
                     if not html:
                         should_crawl = False
                         crawl_stats['failed_urls'] += 1
-                        global_vars.logger.info(f"[{business_id}] Failed parse URL: {url} in process: {threading.get_ident()}")
+                        global_vars.logger.info(f"[{business_id}] Failed parse URL: {url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
                 
                 crawl_stats['crawled_count'] += 1
                 end_time = time.time()
                 fetch_time = end_time - start_time
-                global_vars.logger.info(f"[{business_id}] Crawling {url} at depth {depth} - {website} - Crawled: {crawl_stats['crawled_count']}/{crawl_stats['total_urls']} - Fetch Time: {fetch_time:.2f} seconds in process: {threading.get_ident()}")
+                global_vars.logger.info(f"[{business_id}] Crawling {url} at depth {depth} - {website} - Crawled: {crawl_stats['crawled_count']}/{crawl_stats['total_urls']} - Fetch Time: {fetch_time:.2f} seconds in process: proc-{os.getpid()}-{threading.current_thread().name}")
 
 
                 if should_crawl:
@@ -219,7 +215,7 @@ class Crawler:
                                 'url': url,
                                 'content': html,
                                 'title': html_info.title,
-                                'processID': threading.get_ident(),
+                                'processID': f"{os.getpid()}-{threading.current_thread().name}",
                                 'depth': depth,
                                 'url_type':  html_info.url_type,
                                 **{k: provider[k] for k in ['state', 'county', 'googleReview', 
@@ -233,11 +229,11 @@ class Crawler:
                         if item:
                             pipeline.process_item(item, None) # Use pipeline to save to ES.
                     except Exception as e:
-                        global_vars.logger.error(f"[{business_id}] Error processing item for URL {url}: {e} in process: {threading.get_ident()}")
+                        global_vars.logger.error(f"[{business_id}] Error processing item for URL {url}: {e} in process: proc-{os.getpid()}-{threading.current_thread().name}")
 
 
                     if depth < max_depth and crawl_stats['crawled_count'] < max_pages_per_website:
-                        global_vars.logger.debug(f"[{business_id}] Extracting links from {url} in process: {threading.get_ident()}")
+                        global_vars.logger.debug(f"[{business_id}] Extracting links from {url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
                         try:
                             links = await link_extractor.extract_links(html, url)
                             new_links = [link for link in links if link not in visited_urls and link not in crawl_stats['all_urls']]
@@ -245,66 +241,55 @@ class Crawler:
                             crawl_stats['all_urls'].update(new_links)
                             crawl_stats['total_urls'] += len(new_links)
 
-                            global_vars.logger.debug(f"[{business_id}] Adding {len(new_links)} new links to queue for {url} in process: {threading.get_ident()}")
+                            global_vars.logger.debug(f"[{business_id}] Adding {len(new_links)} new links to queue for {url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
                             for i in range(0, len(new_links), batch_size):
                                 batch = new_links[i:i + batch_size]
                                 task_queue.put((batch, depth + 1))
 
-                                global_vars.logger.debug(f"[{business_id}] Adding {batch} new links to queue for {url} as batch {i} in process: {threading.get_ident()}")
+                                global_vars.logger.debug(f"[{business_id}] Adding {batch} new links to queue for {url} as batch {i} in process: proc-{os.getpid()}-{threading.current_thread().name}")
                         except Exception as e:
-                            global_vars.logger.error(f"[{business_id}] Error extracting or processing links from URL {url}: {e} in process: {threading.get_ident()}")
+                            global_vars.logger.error(f"[{business_id}] Error extracting or processing links from URL {url}: {e} in process: proc-{os.getpid()}-{threading.current_thread().name}")
 
                     else:
-                        global_vars.logger.debug(f"[{business_id}] Max depth or max pages reached, not extracting links from {url} in process: {threading.get_ident()}")
+                        global_vars.logger.debug(f"[{business_id}] Max depth or max pages reached, not extracting links from {url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
                 else:
-                    global_vars.logger.debug(f"[{business_id}] Skipping link extraction for {url} in process: {threading.get_ident()}")
+                    global_vars.logger.debug(f"[{business_id}] Skipping link extraction for {url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
 
             except Exception as e:
-                global_vars.logger.error(f"[{business_id}] An unexpected error occurred while crawling URL {url}: {e} in process: {threading.get_ident()}")
-            finally:
-                if hasattr(process_local_thread, 'context'):
-                    global_vars.logger.debug(f"Closing Playwright context in process: {threading.get_ident()}")
-                    await process_local_thread.context.close()
-                if hasattr(process_local_thread, 'browser'):
-                    global_vars.logger.debug(f"Closing Playwright browser in process: {threading.get_ident()}")
-                    await process_local_thread.browser.close()
-                if hasattr(process_local_thread, 'playwright'):
-                    global_vars.logger.debug(f"Stopping Playwright in process: {threading.get_ident()}")
-                    await process_local_thread.playwright.stop()
-                if hasattr(process_local_thread, 'session'):
-                    global_vars.logger.debug(f"Closing aiohttp session in process: {threading.get_ident()}")
-                    await process_local_thread.session.close()
+                global_vars.logger.error(f"[{business_id}] An unexpected error occurred while crawling URL {url}: {e} in process: proc-{os.getpid()}-{threading.current_thread().name}")
+
 
         async def thread_worker():
             """Worker that processes URLs from the queue"""
-            global_vars.logger.debug(f"Thread worker started in thread: {threading.current_thread().name}")
-            
+            global_vars.logger.debug(f"Thread worker started in thread: proc-{os.getpid()}-{threading.current_thread().name}")
+
+            process_local_thread = threading.local()
+            process_local_thread = await Crawler.init_process_resources()
+
             try:
                 while not shutdown_event.is_set():
                     try:
-                        # process_local_thread = threading.local() #this is still the same memory address.
-                        # process_local_thread = await Crawler.init_thread_resources() #need a new thread local.
-
                         batch, depth = task_queue.get(timeout=1.0)
-                        global_vars.logger.debug(f"Got batch of {len(batch)} URLs from queue at depth {depth} in thread: {threading.current_thread().name}")
-                        tasks = [crawl_page(url, depth) for url in batch]
-                        global_vars.logger.debug(f"Creating {len(tasks)} crawl tasks for batch in thread: {threading.current_thread().name}")
+                        global_vars.logger.debug(f"Got batch of {len(batch)} URLs from queue at depth {depth} in thread: proc-{os.getpid()}-{threading.current_thread().name}")
+                        tasks = [crawl_page(url, depth, process_local_thread) for url in batch]
+                        global_vars.logger.debug(f"Creating {len(tasks)} crawl tasks for batch in thread: proc-{os.getpid()}-{threading.current_thread().name}")
                         await asyncio.gather(*tasks, return_exceptions=True)
                         task_queue.task_done()
-                        global_vars.logger.debug(f"Batch processing completed in thread: {threading.current_thread().name}")
+                        global_vars.logger.debug(f"Batch processing completed in thread: proc-{os.getpid()}-{threading.current_thread().name}")
                     except queue.Empty:
                         # Check if we should exit
                         if crawl_stats['crawled_count'] >= crawl_stats['total_urls'] or crawl_stats['crawled_count'] >= max_pages_per_website:
-                            global_vars.logger.debug(f"Crawled all URLs or reached max pages, exiting thread worker in thread: {threading.current_thread().name}")
+                            global_vars.logger.debug(f"Crawled all URLs or reached max pages, exiting thread worker in thread: proc-{os.getpid()}-{threading.current_thread().name}")
                             break
-                        global_vars.logger.debug(f"Queue is empty, continuing in thread: {threading.current_thread().name} {crawl_stats['crawled_count']} / {crawl_stats['total_urls']}")
+                        global_vars.logger.debug(f"Queue is empty, continuing in thread: proc-{os.getpid()}-{threading.current_thread().name} {crawl_stats['crawled_count']} / {crawl_stats['total_urls']}")
                         continue
             except Exception as e:
-                global_vars.logger.error(f"Thread worker error for {website}: {e} in thread: {threading.current_thread().name}")
+                global_vars.logger.error(f"Thread worker error for {website}: {e} in thread: proc-{os.getpid()}-{threading.current_thread().name}")
             
+            await Crawler.close_process_resources(process_local_thread)
 
         # Start with initial URL
-        global_vars.logger.info(f"[{business_id}] Starting crawl for {start_url} in process: {threading.get_ident()}")
+        global_vars.logger.info(f"[{business_id}] Starting crawl for {start_url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
         task_queue.put(([start_url], 0))
 
         # Create thread pool for this website
@@ -320,18 +305,16 @@ class Crawler:
                 tasks.append(task)
             
             try:
-                global_vars.logger.info(f"[{business_id}] Waiting for thread workers to complete for {website} in process: {threading.get_ident()}")
+                global_vars.logger.info(f"[{business_id}] Waiting for thread workers to complete for {website} in process: proc-{os.getpid()}-{threading.current_thread().name}")
                 await asyncio.wait_for(asyncio.gather(*tasks), timeout=timeout * 100)
             except asyncio.TimeoutError:
-                global_vars.logger.warning(f"[{business_id}] Timeout reached for website {website} in process: {threading.get_ident()}")
+                global_vars.logger.warning(f"[{business_id}] Timeout reached for website {website} in process: proc-{os.getpid()}-{threading.current_thread().name}")
             
             finally:
-                global_vars.logger.info(f"[{business_id}] Cancelling remaining tasks for {website} in process: {threading.get_ident()}")
+                global_vars.logger.info(f"[{business_id}] Cancelling remaining tasks for {website} in process: proc-{os.getpid()}-{threading.current_thread().name}")
                 for task in tasks:
                     if not task.done():
                         task.cancel()
-
-        await Crawler.close_process_resources(process_local)
 
         # Print stats for this website
         end_time = time.time()
@@ -361,26 +344,26 @@ class Crawler:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
-        global_vars.logger.info(f"Website worker started in process: {threading.get_ident()}")
+        global_vars.logger.info(f"Website worker started in process: proc-{os.getpid()}-{threading.current_thread().name}")
 
         while not shutdown_event.is_set():
             try:
                 provider = start_providers_queue.get(timeout=1)  # Changed from get_nowait to get with timeout
-                global_vars.logger.info(f"[{provider['businessID']}] Got website {provider['website']} from queue in process: {threading.get_ident()}")
+                global_vars.logger.info(f"[{provider['businessID']}] Got website {provider['website']} from queue in process: proc-{os.getpid()}-{threading.current_thread().name}")
                 loop.run_until_complete(Crawler.process_website(provider, pipeline, 
                                                                 max_depth, 
                                                                 max_pages_per_website,
-                max_pages_per_website,
+                                                                max_concurrent_per_thread,
                                                                 
                                                         shutdown_event, batch_size, link_extractor, url_type_checker,
                                                         timeout, max_retries))
                 start_providers_queue.task_done()
-                global_vars.logger.info(f"[{provider['businessID']}] Finished processing website {provider['website']} in process: {threading.get_ident()}")
+                global_vars.logger.info(f"[{provider['businessID']}] Finished processing website {provider['website']} in process: proc-{os.getpid()}-{threading.current_thread().name}")
             except queue.Empty:
-                global_vars.logger.info(f"Start URL queue is empty, exiting website worker in process: {threading.get_ident()}")
+                global_vars.logger.info(f"Start URL queue is empty, exiting website worker in process: proc-{os.getpid()}-{threading.current_thread().name}")
                 break
             except Exception as e:
-                global_vars.logger.error(f"Error in website worker: {e} in process: {threading.get_ident()}")
+                global_vars.logger.error(f"Error in website worker: {e} in process: proc-{os.getpid()}-{threading.current_thread().name}")
 
         loop.close()
 
