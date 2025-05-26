@@ -48,7 +48,7 @@ def get_es_data(es, index_name, state, counties):
             #     "domain": "gardenstatetennis.com"
             # }
             "term": {
-                "businessID": 228323
+                "businessID": 233740
             }
             # "bool": {
             #     "must": [
