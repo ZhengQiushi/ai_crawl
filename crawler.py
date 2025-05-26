@@ -258,7 +258,7 @@ class Crawler:
             except Exception as e:
                 global_vars.logger.error(f"[{business_id}] An unexpected error occurred while crawling URL {url}: {e} in process: proc-{os.getpid()}-{threading.current_thread().name}")
 
-
+        @staticmethod
         async def thread_worker():
             """Worker that processes URLs from the queue"""
             global_vars.logger.debug(f"Thread worker started in thread: proc-{os.getpid()}-{threading.current_thread().name}")
@@ -266,32 +266,55 @@ class Crawler:
             process_local_thread = threading.local()
             process_local_thread = await Crawler.init_process_resources()
 
+            attemps = 0
+            last_attempt_total_urls = 0
+
             try:
                 while not shutdown_event.is_set():
                     try:
-                        batch, depth = task_queue.get(timeout=1.0)
+                        global_vars.logger.debug(f"thread try to get task: proc-{os.getpid()}-{threading.current_thread().name}")
+
+                        batch, depth = task_queue.get_nowait()
                         global_vars.logger.debug(f"Got batch of {len(batch)} URLs from queue at depth {depth} in thread: proc-{os.getpid()}-{threading.current_thread().name}")
                         tasks = [crawl_page(url, depth, process_local_thread) for url in batch]
                         global_vars.logger.debug(f"Creating {len(tasks)} crawl tasks for batch in thread: proc-{os.getpid()}-{threading.current_thread().name}")
                         await asyncio.gather(*tasks, return_exceptions=True)
                         task_queue.task_done()
                         global_vars.logger.debug(f"Batch processing completed in thread: proc-{os.getpid()}-{threading.current_thread().name}")
-                    except queue.Empty:
-                        # Check if we should exit
-                        if crawl_stats['crawled_count'] >= crawl_stats['total_urls'] or crawl_stats['crawled_count'] >= max_pages_per_website:
+                        
+                        # After finishing a batch, check if we should exit
+                        if crawl_stats['crawled_count'] > 0 and (crawl_stats['crawled_count'] >= crawl_stats['total_urls'] or crawl_stats['crawled_count'] >= max_pages_per_website):
                             global_vars.logger.debug(f"Crawled all URLs or reached max pages, exiting thread worker in thread: proc-{os.getpid()}-{threading.current_thread().name}")
                             break
+                            
+                    except queue.Empty:
+                        # Check if we should exit when queue is empty
+                        if crawl_stats['crawled_count'] > 0 and (crawl_stats['crawled_count'] >= crawl_stats['total_urls'] or crawl_stats['crawled_count'] >= max_pages_per_website):
+                            global_vars.logger.debug(f"Attemp {attemps} / 3, {crawl_stats['crawled_count']} >= {crawl_stats['total_urls']}. attempt to exit thread worker in thread: proc-{os.getpid()}-{threading.current_thread().name}")
+                            attemps += 1
+                            if last_attempt_total_urls != crawl_stats['total_urls']:
+                                last_attempt_total_urls = crawl_stats['total_urls']
+                                attemps = 0
+
+                            if attemps >= 3:
+                                global_vars.logger.info(f"Crawled all URLs or reached max pages, exiting thread worker in thread: proc-{os.getpid()}-{threading.current_thread().name}")   
+                                break
+                            
                         global_vars.logger.debug(f"Queue is empty, continuing in thread: proc-{os.getpid()}-{threading.current_thread().name} {crawl_stats['crawled_count']} / {crawl_stats['total_urls']}")
+                        await asyncio.sleep(1)  # Add small delay to prevent busy waiting
                         continue
+                        
             except Exception as e:
                 global_vars.logger.error(f"Thread worker error for {website}: {e} in thread: proc-{os.getpid()}-{threading.current_thread().name}")
             
             await Crawler.close_process_resources(process_local_thread)
+            global_vars.logger.debug(f"Thread worker exited in thread: proc-{os.getpid()}-{threading.current_thread().name}")
 
         # Start with initial URL
         global_vars.logger.info(f"[{business_id}] Starting crawl for {start_url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
         task_queue.put(([start_url], 0))
 
+        
         # Create thread pool for this website
         with ThreadPoolExecutor(max_workers=max_concurrent_per_thread) as executor:
             loop = asyncio.get_event_loop()
@@ -368,13 +391,14 @@ class Crawler:
         loop.close()
 
     def crawl_website(self, start_providers: List[Dict]):
-        """Main crawl method"""
-        global_vars.logger.info("Starting crawl process")
-        self.shutdown_event.clear()
+        """Main crawl method using multiprocessing.Process."""
 
-        # Create a multiprocessing.Manager to create shared queue and event
+        global_vars.logger.info("Starting crawl process")
+        self.shutdown_event.clear()  # Ensure the shutdown event is initially clear
+
+        # Use multiprocessing.Manager for shared queue and event
         manager = multiprocessing.Manager()
-        start_providers_queue = manager.Queue()
+        start_providers_queue = manager.Queue() # Replace list with Queue
         shutdown_event = manager.Event()
 
         # Add all start URLs to the queue
@@ -382,18 +406,26 @@ class Crawler:
             start_providers_queue.put(provider)
             global_vars.logger.info(f"[{provider['businessID']}] Added {provider['website']} to start URL queue")
 
-        # Create process pool
-        with multiprocessing.Pool(processes=self.max_processes) as pool:
-            # Prepare arguments for the worker function
-            worker_args = (start_providers_queue, shutdown_event,
-                           self.max_depth, 
-                           self.max_pages_per_website, 
-                           self.max_concurrent_per_thread,
-                           self.batch_size,
-                           self.timeout, self.max_retries)
+        # Create and start processes
+        processes = []
+        for i in range(self.max_processes):
+            p = multiprocessing.Process(
+                target=Crawler.website_worker,
+                args=(start_providers_queue, shutdown_event, self.max_depth,
+                      self.max_pages_per_website, self.max_concurrent_per_thread,
+                      self.batch_size, self.timeout, self.max_retries),
+                name=f"CrawlProcess-{i}"  # Naming processes helps with debugging
+            )
+            processes.append(p)
+            p.start()
 
-            # Use the pool to execute the worker function for each process
-            arg_list = [worker_args] * self.max_processes
-            pool.starmap(Crawler.website_worker, arg_list)
+        # Wait for all tasks to be processed or shutdown signal
+        start_providers_queue.join()  # block until all items in the queue have been gotten and processed
+        shutdown_event.set() # Initiate shutdown after processing all tasks
 
+        # Join processes to wait for them to finish
+        for p in processes:
+            p.join()
+
+        manager.shutdown()
         global_vars.logger.info("Crawl process finished")

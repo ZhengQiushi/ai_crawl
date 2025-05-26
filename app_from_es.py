@@ -239,11 +239,11 @@ async def main():
 
         global_vars.logger.error(f"开始重试, 第 {i} 次，重试长度 {len(combined_data)}")
         crawler = Crawler(
-            max_processes=1,
+            max_processes=4,
             max_concurrent_per_thread=8,
             max_depth=2,
             timeout=10,
-            batch_size=5,
+            batch_size=1,
             max_retries=3,
             max_pages_per_website=500
         )
