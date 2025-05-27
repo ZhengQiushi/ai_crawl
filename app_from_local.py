@@ -64,7 +64,7 @@ def load_data_from_excel(file_path, num_rows):
     df = df.fillna('')
     df['domain'] = df['website'].apply(extract_domain)
 
-    df_filtered = df # [df['businessID']] #  == '202245'
+    df_filtered = df[df['businessID'] == '204454']
 
     data = df_filtered.to_dict('records')  # 转换为字典列表
 

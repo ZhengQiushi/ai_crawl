@@ -57,7 +57,7 @@ async def main():
         # "https://www.frogrentscanoeskayaks.com/",
     ]
     
-    await crawler.crawl_website(start_urls)
+    crawler.crawl_website(start_urls)
 
 
 if __name__ == "__main__":

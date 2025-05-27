@@ -33,9 +33,9 @@ async def main():
     crawler = Crawler(
         max_processes=1,
         max_concurrent_per_thread=1,
-        max_depth=1,
+        max_depth=2,
         timeout=10,
-        batch_size=5,
+        batch_size=512,
         max_retries=3
     )
     
@@ -45,7 +45,7 @@ async def main():
             "businessFullName": "test",
             "domain": "centercourtacademy.com",
             # "website": "https://www.fortleenj.org/DocumentCenter/View/5453/Business-Registration-081522-PDF"
-            "website": "http://www.centerstagenj.com/"
+            "website": "https://www.creatif.com/livingston-nj/"
         }
         # "https://www.creatif.com/livingston-nj/",
         # "https://www.fortleenj.org",
