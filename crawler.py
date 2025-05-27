@@ -17,7 +17,13 @@ from url_type_checker import *
 from enum import Enum
 import queue
 import multiprocessing
-import os
+import os, re
+
+from scrapy import Request
+from scrapy.dupefilters import RFPDupeFilter
+
+from scrapy.http import TextResponse
+from scrapy.linkextractors.lxmlhtml import LxmlLinkExtractor
 
 import asyncio
 import aiohttp
@@ -31,6 +37,7 @@ import time
 import queue
 import global_vars
 from pipeline import CsvPipeline
+from scrape_link_extractor import AsyncLinkExtractor
 
 
 class Crawler:
@@ -56,7 +63,7 @@ class Crawler:
         self.start_providers_queue = multiprocessing.Queue()  # Changed to multiprocessing.Queue
         self.shutdown_event = multiprocessing.Event()  # Changed to multiprocessing.Event
         # self.thread_local = threading.local()  # Removing thread local storage to avoid pickling issues
-        self.link_extractor = LinkExtractor()
+        self.link_extractor = AsyncLinkExtractor()
         self.url_type_checker = URLTypeChecker()
 
         self.user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36'
@@ -101,10 +108,34 @@ class Crawler:
     @staticmethod
     async def fetch_with_playwright(url: str, process_local: threading.local, max_retries: int, timeout: int) -> str:
         """Fetch page content with Playwright with retry mechanism"""
+        def get_encoding_from_playwright_response(pw_response):
+            """
+            Tries to extract the encoding from the Playwright Response's Content-Type header.
+            Falls back to 'utf-8'.
+            """
+            content_type = pw_response.headers.get('Content-Type', '')
+            encoding = 'utf-8'
+            # 确保 content_type 是字符串类型
+            if isinstance(content_type, bytes):
+                try:
+                    content_type = content_type.decode('utf-8')  # 尝试使用 UTF-8 解码
+                except Exception as e:
+                    content_type = content_type.decode('latin-1', errors='ignore')  # 如果 UTF-8 失败，尝试使用 Latin-1 解码，忽略错误
+            try:
+                # 尝试从 Content-Type 中提取编码
+                if 'charset=' in content_type:
+                    encoding = content_type.split('charset=')[-1].strip()
+            except Exception as e:
+                global_vars.logger.error(f"Error extracting encoding from Content-Type: {content_type}")
+            # Playwright's response.text() would have already decoded using its best guess.
+            # If creating HtmlResponse from text, this encoding is more for metadata.
+            # If creating HtmlResponse from body (bytes), this encoding is crucial for decoding.
+            return encoding
 
         load_result = False  # Store load state result for logging as boolean
         networkidle_result = False
         content = ""
+        scrapy_like_response = None
 
         for attempt in range(max_retries):
             page = await process_local.context.new_page()  # No user_agent here.
@@ -115,7 +146,8 @@ class Crawler:
                 # Attempt initial load if not already successful
                 if not load_result:
                     try:
-                        await page.goto(url, wait_until='load', timeout=timeout * 1000)
+                        playwright_response = await page.goto(url, wait_until='load', timeout=timeout * 1000)
+
                         load_result = True
                         content = await page.content()  # Save content on successful load
                         global_vars.logger.debug(f"Initial 'load' success for {url}")
@@ -126,6 +158,7 @@ class Crawler:
                 # Wait for networkidle
                 try:
                     await page.wait_for_load_state('networkidle', timeout=timeout * 1000)
+
                     networkidle_result = True
                     content = await page.content()  # Overwrite with potentially updated content
                     global_vars.logger.debug(f"Initial 'networkidle' success for {url}")
@@ -140,11 +173,17 @@ class Crawler:
                     break  # Exit the loop; return "" after finally
 
             finally:
+                global_vars.logger.debug(f"Playwright fetch time for {url} | Load: {load_result}, NetworkIdle: {networkidle_result} in process: proc-{os.getpid()}-{threading.current_thread().name}")
+
+                page_encoding = get_encoding_from_playwright_response(playwright_response)
+                scrapy_like_response = TextResponse(
+                    url=playwright_response.url,
+                    body=await playwright_response.body(), # Pass the string content
+                    encoding=page_encoding  # Inform Scrapy about the (likely) original encoding
+                )
                 await page.close()
         
-        global_vars.logger.debug(f"Playwright fetch time for {url} | Load: {load_result}, NetworkIdle: {networkidle_result} in process: proc-{os.getpid()}-{threading.current_thread().name}")
-
-        return content  # Return empty string after all retries failed
+        return content, scrapy_like_response
 
     @staticmethod
     async def process_website(provider: Dict, 
@@ -153,7 +192,7 @@ class Crawler:
                               max_pages_per_website: int, 
                               max_concurrent_per_thread: int,
                                 shutdown_event: multiprocessing.Event, batch_size: int, 
-                                link_extractor: LinkExtractor, url_type_checker: URLTypeChecker,
+                                link_extractor: AsyncLinkExtractor, url_type_checker: URLTypeChecker,
                                 timeout: int, max_retries: int):
         """Process a single website with its own queues and stats"""
         start_url = provider["website"]
@@ -161,6 +200,7 @@ class Crawler:
         business_id = provider["businessID"]
         task_queue = queue.Queue()
         visited_urls = set()
+        visited_urls_fp = set()
         
         crawl_stats = {
             'start_time': time.time(),
@@ -177,16 +217,18 @@ class Crawler:
 
             try:
                 if depth > max_depth or len(visited_urls) >= max_pages_per_website or shutdown_event.is_set():
-                    global_vars.logger.debug(f"[{business_id}] Reached max depth or max pages or shutdown signal. Skipping {url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
-                    return
+                    raise Exception(f"[{business_id}] Reached max depth or max pages or shutdown signal. Skipping {url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
 
-                if url in visited_urls:
-                    global_vars.logger.debug(f"[{business_id}] Already visited {url}. Skipping in process: proc-{os.getpid()}-{threading.current_thread().name}")
-                    return
+                url_fp = RFPDupeFilter().request_fingerprint(Request(url))
+                if url in visited_urls or url_fp in visited_urls_fp:
+                    raise Exception(f"[{business_id}] Already visited {url}. Skipping in process: proc-{os.getpid()}-{threading.current_thread().name}")
+                
                 visited_urls.add(url)
+                visited_urls_fp.add(url_fp)
 
                 should_crawl = True
                 html = None
+                scrapy_like_response = None
 
                 html_info = await url_type_checker.is_pdf_url_with_title(url)
                 if html_info.url_type == URLType.PDF:
@@ -198,33 +240,30 @@ class Crawler:
                     should_crawl = False
                 else:
                     global_vars.logger.debug(f"[{business_id}] Fetching {url} with Playwright in process: proc-{os.getpid()}-{threading.current_thread().name}")
-                    html = await Crawler.fetch_with_playwright(url, process_local_thread, max_retries, timeout)
-
-                    if url == "https://www.centerstagenj.com/summer-programs" or url == "http://www.centerstagenj.com/summer-programs":
-                        print(url, "ttt333\n", html)
+                    html, scrapy_like_response = await Crawler.fetch_with_playwright(url, process_local_thread, max_retries, timeout)
                     
                     if not html:
                         should_crawl = False
                         crawl_stats['failed_urls'] += 1
                         global_vars.logger.info(f"[{business_id}] Failed parse URL: {url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
                 
-                crawl_stats['crawled_count'] += 1
-                end_time = time.time()
-                fetch_time = end_time - start_time
-                global_vars.logger.info(f"[{business_id}] Crawling {url} at depth {depth} - {website} - Crawled: {crawl_stats['crawled_count']}/{crawl_stats['total_urls']} - Fetch Time: {fetch_time:.2f} seconds in process: proc-{os.getpid()}-{threading.current_thread().name}")
 
 
                 if should_crawl:
+                    response_url_fp = RFPDupeFilter().request_fingerprint(Request(scrapy_like_response.url))
+                    visited_urls.add(scrapy_like_response.url)
+                    visited_urls_fp.add(response_url_fp)
 
                     if depth < max_depth and crawl_stats['crawled_count'] < max_pages_per_website:
                         global_vars.logger.debug(f"[{business_id}] Extracting links from {url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
                         try:
-                            links = await link_extractor.extract_links(html, url)
-
-                            if url == "https://www.centerstagenj.com/summer-programs" or url == "http://www.centerstagenj.com/summer-programs":
-                                print(url, "ttt222\n", links)
-                                
-                            new_links = [link for link in links if link not in visited_urls and link not in crawl_stats['all_urls']]
+                            links = await link_extractor.extract_links(scrapy_like_response, url)
+                            
+                            new_links = []
+                            for link in links: 
+                                url_fp = RFPDupeFilter().request_fingerprint(Request(link))
+                                if (link not in visited_urls and url_fp not in visited_urls_fp) and depth + 1 <= max_depth and crawl_stats['total_urls'] < max_pages_per_website:
+                                    new_links.append(link)
                             
                             crawl_stats['all_urls'].update(new_links)
                             crawl_stats['total_urls'] += len(new_links)
@@ -259,14 +298,11 @@ class Crawler:
                     # Call pipeline to save the item
                     try:
                         if item:
-                            pipeline.process_item(item, None) # Use pipeline to save to ES.
+                            # pipeline.process_item(item, None) # Use pipeline to save to ES.
+                            pass
                     except Exception as e:
                         global_vars.logger.error(f"[{business_id}] Error processing item for URL {url}: {e} in process: proc-{os.getpid()}-{threading.current_thread().name}")
 
-                    if url == "https://www.centerstagenj.com/summer-programs" or url == "http://www.centerstagenj.com/summer-programs" :
-                        md_generator = DefaultMarkdownGenerator()  
-                        text = md_generator.generate_markdown(item['row']['content'], item['row']['url']).raw_markdown
-                        print(url, "ttt111\n", text)
                         
                          
                 else:
@@ -274,6 +310,12 @@ class Crawler:
 
             except Exception as e:
                 global_vars.logger.error(f"[{business_id}] An unexpected error occurred while crawling URL {url}: {e} in process: proc-{os.getpid()}-{threading.current_thread().name}")
+
+
+            crawl_stats['crawled_count'] += 1
+            end_time = time.time()
+            fetch_time = end_time - start_time
+            global_vars.logger.info(f"[{business_id}] Crawling {url} at depth {depth} - {website} - Crawled: {crawl_stats['crawled_count']}/{crawl_stats['total_urls']} - Fetch Time: {fetch_time:.2f} seconds in process: proc-{os.getpid()}-{threading.current_thread().name}")
 
         @staticmethod
         async def thread_worker():
@@ -378,7 +420,7 @@ class Crawler:
         """Worker that processes websites from the start_providers_queue"""
         # Initialize the pipeline here, so each website worker has its own instance
         pipeline = CsvPipeline()
-        link_extractor = LinkExtractor()
+        link_extractor = AsyncLinkExtractor()
         url_type_checker = URLTypeChecker()
 
         loop = asyncio.new_event_loop()

@@ -64,7 +64,7 @@ def load_data_from_excel(file_path, num_rows):
     df = df.fillna('')
     df['domain'] = df['website'].apply(extract_domain)
 
-    df_filtered = df[df['businessID'] == '202245']
+    df_filtered = df # [df['businessID']] #  == '202245'
 
     data = df_filtered.to_dict('records')  # 转换为字典列表
 
@@ -97,7 +97,7 @@ async def main():
 
     global_vars.logger.error(f"开始爬虫任务, 共 {len(combined_data)} 个条目")
     crawler = Crawler(
-        max_processes=1,
+        max_processes=16,
         max_concurrent_per_thread=8,
         max_depth=2,
         timeout=10,
@@ -105,7 +105,7 @@ async def main():
         max_retries=3,
         max_pages_per_website=500
     )
-    combined_data = combined_data[0:1]
+    combined_data = combined_data[0:10]
     crawler.crawl_website(combined_data)
 
 

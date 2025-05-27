@@ -158,9 +158,9 @@ async def main():
         # url = "https://www.fortleenj.org/731/Fort-Lee-On-Demand"
         # url = "https://www.creatif.com/livingston-nj/camp-calendar"  # 测试 URL
         # url = "https://bklanyc.com/"
-        url = "https://www.centerstagenj.com/summer-programs"
+        url = "https://www.classicalacademy.org" # "https://www.centerstagenj.com/summer-programs"
         try:
-            if is_valid_url(url):
+            if True: # is_valid_url(url):
                 url_type = await is_pdf_url(url)
                 if url_type == URLType.PDF:
                     # 处理 PDF 文件

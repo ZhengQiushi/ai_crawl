@@ -11,6 +11,7 @@ from bs4 import BeautifulSoup
 import asyncio
 import logging
 import requests
+from w3lib import html
 
 class LinkExtractor:
     excluded_extensions = ['.xls', '.xlsx', '.ppt', '.pptx',
@@ -38,16 +39,16 @@ class LinkExtractor:
             href = a['href']
             absolute_url = urljoin(base_url, href)
 
-            if "docs.google.com/forms" in absolute_url:
+            if absolute_url.find("docs.google.com/forms") != -1:
                 links.add(absolute_url)
                 continue
 
             # 检查协议和子域名
             base_domain = self.myurlparse(base_url)
             link_domain = self.myurlparse(absolute_url)
-            if link_domain.endswith(base_domain):  # 确保是子域名或相同域名
+            if link_domain.find(base_domain) != -1 or base_domain.find(link_domain) != -1:  # 确保是子域名或相同域名
                 # 检查是否为排除的扩展名
-                if not any(absolute_url.lower().endswith(ext) for ext in self.excluded_extensions):
+                if not any(absolute_url.lower().find(ext) != -1 for ext in self.excluded_extensions):
                     links.add(absolute_url)
 
         return list(links)  # 返回列表

@@ -47,36 +47,37 @@ def get_es_data(es, index_name, state, counties):
             # "term": {
             #     "domain": "gardenstatetennis.com"
             # }
-            # "terms": {
-            #     "businessID": [ 240658, 
-            #                     202957,
-            #                     233601,
-            #                     233236,
-            #                     230235,
-            #                     231730,
-            #                     240546,
-            #                     222043,
-            #                     235409,
-            #                     233060,
-            #                     235818,
-            #                     237197#,
-            #                     ] # 233740, 202957, 
-            # }
+            "terms": {
+                "businessID": [ 202957
+                                # 240658, 
+                                # 202957,
+                                # 233601,
+                                # 233236,
+                                # 230235,
+                                # 231730,
+                                # 240546,
+                                # 222043,
+                                # 235409,
+                                # 233060,
+                                # 235818,
+                                # 237197#,
+                                ] # 233740, 202957, 
+            }
             # "bool": {
             #     "must": [
             #         {"bool": {"should": county_matches}}  # 使用 should 来匹配任何一个 county
             #     ]
             # }
 
-            "bool": {
-                "must": [
-                    {
-                        "exists": {
-                            "field": "summerCampPages"
-                        }
-                    }
-                ]
-            }
+            # "bool": {
+            #     "must": [
+            #         {
+            #             "exists": {
+            #                 "field": "summerCampPages"
+            #             }
+            #         }
+            #     ]
+            # }
             # "match_all": {
 
             # }
@@ -132,7 +133,7 @@ def get_es_data(es, index_name, state, counties):
                 "pages_length": hit["fields"]["pages_length"][0],  # 获取 pages 的长度
                 'job_id': str(source["businessID"]),  # 添加job_id
             }
-            if int(source["businessID"]) % 4 == 0:
+            if True: # int(source["businessID"]) % 4 == 0:
                 results.append(result)
         global_vars.logger.error(f"长度 {len(results)}")
         try:
@@ -240,11 +241,11 @@ async def main():
 
         global_vars.logger.error(f"开始重试, 第 {i} 次，重试长度 {len(combined_data)}")
         crawler = Crawler(
-            max_processes=16,
+            max_processes=1,
             max_concurrent_per_thread=8,
             max_depth=2,
             timeout=10,
-            batch_size=1,
+            batch_size=5,
             max_retries=3,
             max_pages_per_website=500
         )
