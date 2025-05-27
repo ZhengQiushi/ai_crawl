@@ -14,9 +14,16 @@
             "args": [
                 "--County", "Morris,Essex,Union,Hudson",
                 "--State", "NewJersey", 
-                "--Num", "100",
+                "--Num", "10000",
                 "--Config", "/root/ai_crawl/config.env"
             ]
+        },
+        {
+            "name": "attach crawler",
+            "type": "debugpy",
+            "request": "attach",
+            "processId": "${command:pickProcess}",
+            "cwd": "/root/ai_crawl",
         },
         {
             "name": "debug",

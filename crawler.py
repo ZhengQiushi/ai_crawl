@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from playwright.async_api import async_playwright
 from urllib.parse import urlparse, urljoin
 from typing import List, Set, Dict, Optional
+from crawl4ai import PruningContentFilter, DefaultMarkdownGenerator
 import logging
 import threading
 import time
@@ -198,6 +199,10 @@ class Crawler:
                 else:
                     global_vars.logger.debug(f"[{business_id}] Fetching {url} with Playwright in process: proc-{os.getpid()}-{threading.current_thread().name}")
                     html = await Crawler.fetch_with_playwright(url, process_local_thread, max_retries, timeout)
+
+                    if url == "https://www.centerstagenj.com/summer-programs" or url == "http://www.centerstagenj.com/summer-programs":
+                        print(url, "ttt333\n", html)
+                    
                     if not html:
                         should_crawl = False
                         crawl_stats['failed_urls'] += 1
@@ -210,6 +215,33 @@ class Crawler:
 
 
                 if should_crawl:
+
+                    if depth < max_depth and crawl_stats['crawled_count'] < max_pages_per_website:
+                        global_vars.logger.debug(f"[{business_id}] Extracting links from {url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
+                        try:
+                            links = await link_extractor.extract_links(html, url)
+
+                            if url == "https://www.centerstagenj.com/summer-programs" or url == "http://www.centerstagenj.com/summer-programs":
+                                print(url, "ttt222\n", links)
+                                
+                            new_links = [link for link in links if link not in visited_urls and link not in crawl_stats['all_urls']]
+                            
+                            crawl_stats['all_urls'].update(new_links)
+                            crawl_stats['total_urls'] += len(new_links)
+
+                            global_vars.logger.debug(f"[{business_id}] Adding {len(new_links)} new links to queue for {url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
+                            for i in range(0, len(new_links), batch_size):
+                                batch = new_links[i:i + batch_size]
+                                task_queue.put((batch, depth + 1))
+
+                                global_vars.logger.debug(f"[{business_id}] Adding {batch} new links to queue for {url} as batch {i} in process: proc-{os.getpid()}-{threading.current_thread().name}")
+                        except Exception as e:
+                            global_vars.logger.error(f"[{business_id}] Error extracting or processing links from URL {url}: {e} in process: proc-{os.getpid()}-{threading.current_thread().name}")
+
+                    else:
+                        global_vars.logger.debug(f"[{business_id}] Max depth or max pages reached, not extracting links from {url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
+
+
                     item = {
                             'row': {
                                 'url': url,
@@ -231,27 +263,12 @@ class Crawler:
                     except Exception as e:
                         global_vars.logger.error(f"[{business_id}] Error processing item for URL {url}: {e} in process: proc-{os.getpid()}-{threading.current_thread().name}")
 
-
-                    if depth < max_depth and crawl_stats['crawled_count'] < max_pages_per_website:
-                        global_vars.logger.debug(f"[{business_id}] Extracting links from {url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
-                        try:
-                            links = await link_extractor.extract_links(html, url)
-                            new_links = [link for link in links if link not in visited_urls and link not in crawl_stats['all_urls']]
-                            
-                            crawl_stats['all_urls'].update(new_links)
-                            crawl_stats['total_urls'] += len(new_links)
-
-                            global_vars.logger.debug(f"[{business_id}] Adding {len(new_links)} new links to queue for {url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
-                            for i in range(0, len(new_links), batch_size):
-                                batch = new_links[i:i + batch_size]
-                                task_queue.put((batch, depth + 1))
-
-                                global_vars.logger.debug(f"[{business_id}] Adding {batch} new links to queue for {url} as batch {i} in process: proc-{os.getpid()}-{threading.current_thread().name}")
-                        except Exception as e:
-                            global_vars.logger.error(f"[{business_id}] Error extracting or processing links from URL {url}: {e} in process: proc-{os.getpid()}-{threading.current_thread().name}")
-
-                    else:
-                        global_vars.logger.debug(f"[{business_id}] Max depth or max pages reached, not extracting links from {url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
+                    if url == "https://www.centerstagenj.com/summer-programs" or url == "http://www.centerstagenj.com/summer-programs" :
+                        md_generator = DefaultMarkdownGenerator()  
+                        text = md_generator.generate_markdown(item['row']['content'], item['row']['url']).raw_markdown
+                        print(url, "ttt111\n", text)
+                        
+                         
                 else:
                     global_vars.logger.debug(f"[{business_id}] Skipping link extraction for {url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
 

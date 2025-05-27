@@ -3,8 +3,9 @@ import os
 import json
 import logging
 from elasticsearch import Elasticsearch
+from elasticsearch import AsyncElasticsearch  # Now using async client
 from dotenv import dotenv_values
-import threading
+import asyncio
 
 # Global variables
 config = None
@@ -12,26 +13,26 @@ eslogger = None
 logger = None
 
 
-class ElasticsearchHandler(logging.Handler):
+class AsyncElasticsearchHandler(logging.Handler):
     def __init__(self, index):
         super().__init__()
         self.index = index
-        self.client = None
-        self.lock = threading.Lock()
-
-    def get_client(self):
-        with self.lock:
-            if self.client is None:
-                es_config = {
-                    "hosts": [config.get("ES_HOST")],
-                    "api_key": config.get("ES_API_KEY"),
-                    "timeout": 30,
-                    "max_retries": 3,
-                    "retry_on_timeout": True
-                }
-                self.client = Elasticsearch(**es_config)
-            return self.client
-
+        self._async_client = None
+        self._loop = asyncio.get_event_loop()
+        
+    @property
+    def async_client(self):
+        if self._async_client is None:
+            es_config = {
+                "hosts": [config.get("ES_HOST")],
+                "api_key": config.get("ES_API_KEY"),
+                "timeout": 30,
+                "max_retries": 3,
+                "retry_on_timeout": True
+            }
+            self._async_client = AsyncElasticsearch(**es_config)
+        return self._async_client
+    
     def emit(self, record):
         try:
             log_data = {
@@ -42,17 +43,16 @@ class ElasticsearchHandler(logging.Handler):
                 "module": record.module,
                 "file": f"{record.filename}:{record.lineno}"
             }
-            # Use a thread to write to Elasticsearch asynchronously
-            threading.Thread(target=self._write_to_es, args=(log_data,)).start()
+            # Schedule the async task to run in the event loop
+            asyncio.run_coroutine_threadsafe(self._async_emit(log_data), self._loop)
         except Exception as e:
             print(f"准备写入 Elasticsearch 时出错: {e}")
             raise e
-
-    def _write_to_es(self, log_data):
-        """执行 Elasticsearch 写入的方法"""
+            
+    async def _async_emit(self, log_data):
+        """实际执行 Elasticsearch 写入的异步方法"""
         try:
-            es_client = self.get_client()
-            es_client.index(index=self.index, body=log_data)
+            await self.async_client.index(index=self.index, body=log_data)
         except Exception as e:
             print(f"写入 Elasticsearch 时出错: {e}")
             raise e
@@ -80,5 +80,5 @@ def init_globals(config_file):
     logger.addHandler(stream_handler)
 
     # 创建 Elasticsearch 日志处理器
-    es_handler = ElasticsearchHandler(config.get("ES_LOGGER_INDEX_NAME"))
-    logger.addHandler(es_handler)
+    es_handler = AsyncElasticsearchHandler(config.get("ES_LOGGER_INDEX_NAME"))
+    # logger.addHandler(es_handler)
