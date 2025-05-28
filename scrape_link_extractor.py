@@ -61,7 +61,12 @@ class AsyncLinkExtractor:
 
             if base_domain and link_domain and (base_domain in link_domain or link_domain in base_domain):
                 # 检查是否为排除的扩展名
-                if not any(ext in absolute_url.lower() for ext in self.excluded_extensions):
+                is_ok = True
+                for ext in self.excluded_extensions:
+                    if absolute_url.lower().endswith(ext):
+                        is_ok = False
+                        break
+                if is_ok:
                     extracted_urls.add(absolute_url)
 
         return list(extracted_urls)  # 返回列表

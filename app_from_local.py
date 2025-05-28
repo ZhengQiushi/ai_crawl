@@ -86,7 +86,7 @@ def load_data_from_excel(file_path, num_rows):
         '202957',
         '205286'
         ]
-    df_filtered = df[df['businessID'] == "234936"] # df[~df['businessID'].isin(real_provider)]
+    df_filtered = df[df['businessID'] == "223251"] # df[~df['businessID'].isin(real_provider)]
 
     data = df_filtered.to_dict('records')  # 转换为字典列表
 
