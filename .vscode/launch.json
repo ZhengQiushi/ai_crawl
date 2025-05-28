@@ -9,13 +9,13 @@
             "type": "debugpy",
             "request": "launch",
             "program": "${file}",
-            "cwd" :"/root/ai_crawl",
+            "cwd" :"/home/azureuser/ai_crawl",
             "console": "integratedTerminal",
             "args": [
                 "--County", "Morris,Essex,Union,Hudson",
                 "--State", "NewJersey", 
                 "--Num", "10000",
-                "--Config", "/root/ai_crawl/config.env"
+                "--Config", "/home/azureuser/ai_crawl/config.env"
             ]
         },
         {

@@ -194,7 +194,7 @@ class Crawler:
                 page_encoding = get_encoding_from_playwright_response(playwright_response)
                 scrapy_like_response = TextResponse(
                     url=playwright_response.url,
-                    body=await playwright_response.body(), # Pass the string content
+                    body=content, # Pass the string content
                     encoding=page_encoding  # Inform Scrapy about the (likely) original encoding
                 )
 

@@ -86,7 +86,7 @@ def load_data_from_excel(file_path, num_rows):
         '202957',
         '205286'
         ]
-    df_filtered = df[~df['businessID'].isin(real_provider)]
+    df_filtered = df[df['businessID'] == "234936"] # df[~df['businessID'].isin(real_provider)]
 
     data = df_filtered.to_dict('records')  # 转换为字典列表
 
@@ -119,8 +119,8 @@ async def main():
 
     global_vars.logger.error(f"开始爬虫任务, 共 {len(combined_data)} 个条目")
     crawler = Crawler(
-        max_processes=8,
-        max_concurrent_per_thread=8,
+        max_processes=1,
+        max_concurrent_per_thread=1,
         max_depth=2,
         timeout=30,
         batch_size=1,
