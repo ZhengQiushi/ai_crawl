@@ -148,10 +148,9 @@ class Crawler:
         title = ""
         scrapy_like_response = None
         playwright_response = None
+        page = await process_local.context.new_page()  # No user_agent here.
 
         for attempt in range(max_retries):
-            page = await process_local.context.new_page()  # No user_agent here.
-
             try:
                 global_vars.logger.debug(f"Attempt {attempt + 1}/{max_retries} for {url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
 
@@ -168,7 +167,7 @@ class Crawler:
                         global_vars.logger.debug(f"Initial 'load' success for {url}")
                     except Exception as e:
                         global_vars.logger.warning(f"Initial 'load' failed for {url}: {e}")
-                        raise e
+                        continue
 
                 # Wait for networkidle
                 try:
@@ -179,28 +178,29 @@ class Crawler:
                     global_vars.logger.debug(f"Initial 'networkidle' success for {url}")
                 except Exception as e:
                     global_vars.logger.warning(f"'networkidle' wait failed for {url}: {e}")
-                    raise e
-                
+                    break
+
+                global_vars.logger.debug(f"Playwright fetch time for {url} | Load: {load_result}, NetworkIdle: {networkidle_result} in process: proc-{os.getpid()}-{threading.current_thread().name}")
                 break
+
             except Exception as e:
                 global_vars.logger.warn(f"Failed fetching {url} (attempt {attempt + 1}): {e} in process: proc-{os.getpid()}-{threading.current_thread().name}")
                 if "net::ERR_ABORTED" in str(e):
                     global_vars.logger.error(f"Error fetching {url} (attempt {attempt + 1}): {e} in process: proc-{os.getpid()}-{threading.current_thread().name}")
                     break
-                if attempt == max_retries - 1:  # Last attempt failed
-                    global_vars.logger.error(f"Error fetching {url} (attempt {attempt + 1}): {e} in process: proc-{os.getpid()}-{threading.current_thread().name}")
-                    break  
 
-            finally:
-                global_vars.logger.debug(f"Playwright fetch time for {url} | Load: {load_result}, NetworkIdle: {networkidle_result} in process: proc-{os.getpid()}-{threading.current_thread().name}")
-                if playwright_response:
-                    page_encoding = get_encoding_from_playwright_response(playwright_response)
-                    scrapy_like_response = TextResponse(
-                        url=playwright_response.url,
-                        body=await playwright_response.body(), # Pass the string content
-                        encoding=page_encoding  # Inform Scrapy about the (likely) original encoding
-                    )
-                await page.close()
+        try:
+            if playwright_response:
+                page_encoding = get_encoding_from_playwright_response(playwright_response)
+                scrapy_like_response = TextResponse(
+                    url=playwright_response.url,
+                    body=await playwright_response.body(), # Pass the string content
+                    encoding=page_encoding  # Inform Scrapy about the (likely) original encoding
+                )
+
+            await page.close()
+        except Exception as e:
+            global_vars.logger.error(f"Error fetching {url} (attempt {attempt + 1}): {e} in process: proc-{os.getpid()}-{threading.current_thread().name}")
         
         return content, title, scrapy_like_response
 
@@ -305,7 +305,7 @@ class Crawler:
 
                     item = {
                             'row': {
-                                'url': url,
+                                'url': scrapy_like_response.url if scrapy_like_response else url,
                                 'content': html,
                                 'title': html_info.title,
                                 'processID': f"{os.getpid()}-{threading.current_thread().name}",
