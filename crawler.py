@@ -148,7 +148,7 @@ class Crawler:
         title = ""
         scrapy_like_response = None
         playwright_response = None
-        page = await process_local.context.new_page()  # No user_agent here.
+        page = await process_local.context.new_page()
 
         for attempt in range(max_retries):
             try:
@@ -157,7 +157,7 @@ class Crawler:
                 # Attempt initial load if not already successful
                 if not load_result:
                     try:                        
-                        await page.route("**/*", request_handler)
+                        # await page.route("**/*", request_handler)
 
                         playwright_response = await page.goto(url, wait_until='load', timeout=timeout * 1000)
 

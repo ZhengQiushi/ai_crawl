@@ -38,7 +38,13 @@ class AsyncLinkExtractor:
         except Exception as e:
             logging.error(f"Error parsing URL {url}: {e}")
             return None
-        
+
+    def is_same_or_subdomain(self, domain1: str, domain2: str) -> bool:
+        """检查两个域名是否相同或一个是另一个的子域名"""
+        if not domain1 or not domain2:
+            return False
+        return domain1 == domain2 or domain1.endswith(f".{domain2}") or domain2.endswith(f".{domain1}")
+
     async def extract_links(self, scrapy_like_response: TextResponse, base_url: str) -> List[str]:
         """Extract links from HTML using Scrapy's LinkExtractor"""
         # Parse HTML with BeautifulSoup first to get proper HTML structure
@@ -57,9 +63,11 @@ class AsyncLinkExtractor:
 
             # 检查协议和子域名
             base_domain = self.myurlparse(base_url)
+            base_response_domain = self.myurlparse(scrapy_like_response.url)
             link_domain = self.myurlparse(absolute_url)
 
-            if base_domain and link_domain and (base_domain in link_domain or link_domain in base_domain):
+            # 然后原来的条件可以简化为：
+            if self.is_same_or_subdomain(base_domain, link_domain) or self.is_same_or_subdomain(base_response_domain, link_domain):
                 # 检查是否为排除的扩展名
                 is_ok = True
                 for ext in self.excluded_extensions:
