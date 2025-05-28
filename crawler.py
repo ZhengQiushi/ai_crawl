@@ -73,13 +73,13 @@ class Crawler:
     async def init_process_resources():
         """Initialize resources for each process"""
         process_local = threading.local()
-
+        user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36'
         global_vars.logger.debug(f"Initializing process resources in process: proc-{os.getpid()}-{threading.current_thread().name}")
         if not hasattr(process_local, 'playwright'):
             global_vars.logger.debug(f"Launching Playwright in process: proc-{os.getpid()}-{threading.current_thread().name}")
             process_local.playwright = await async_playwright().start()
             process_local.browser = await process_local.playwright.chromium.launch(headless=True)
-            process_local.context = await process_local.browser.new_context()
+            process_local.context = await process_local.browser.new_context(user_agent=user_agent)
             global_vars.logger.debug(f"Playwright launched successfully in process: proc-{os.getpid()}-{threading.current_thread().name}")
         
         if not hasattr(process_local, 'session'):
