@@ -1,5 +1,4 @@
 import asyncio
-import aiohttp
 from concurrent.futures import ThreadPoolExecutor
 from playwright.async_api import async_playwright
 from urllib.parse import urlparse, urljoin
@@ -63,8 +62,31 @@ def load_data_from_excel(file_path, num_rows):
     # 处理空值
     df = df.fillna('')
     df['domain'] = df['website'].apply(extract_domain)
-
-    df_filtered = df[df['businessID'] == '204454']
+    real_provider = [
+        '9427',
+        '9460',
+        '100000',
+        '100002',
+        '100003',
+        '100004',
+        '100005',
+        '100006',
+        '100007',
+        '100008',
+        '100009',
+        '100010',
+        '100011',
+        '100012',
+        '100013',
+        '100014',
+        '100015',
+        '100016',
+        '100017',
+        '201093',
+        '202957',
+        '205286'
+        ]
+    df_filtered = df[~df['businessID'].isin(real_provider)]
 
     data = df_filtered.to_dict('records')  # 转换为字典列表
 
@@ -91,21 +113,21 @@ async def main():
     counties = [c.strip() for c in args.County.split(',')]
 
     # Load data from Excel file
-    excel_file_path = '/root/ai_crawl/data/provider_data_combined_250527.xlsx'
+    excel_file_path = '/home/azureuser/ai_crawl/data/provider_data_combined_250527.xlsx'
     combined_data = load_data_from_excel(excel_file_path, int(args.Num))
 
 
     global_vars.logger.error(f"开始爬虫任务, 共 {len(combined_data)} 个条目")
     crawler = Crawler(
-        max_processes=16,
+        max_processes=8,
         max_concurrent_per_thread=8,
         max_depth=2,
-        timeout=10,
-        batch_size=5,
+        timeout=30,
+        batch_size=1,
         max_retries=3,
         max_pages_per_website=500
     )
-    combined_data = combined_data[0:10]
+    combined_data = combined_data[0:500]
     crawler.crawl_website(combined_data)
 
 
