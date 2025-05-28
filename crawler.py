@@ -133,6 +133,15 @@ class Crawler:
             # If creating HtmlResponse from body (bytes), this encoding is crucial for decoding.
             return encoding
 
+
+        async def request_handler(route):
+            resource_type = route.request.resource_type
+            if resource_type in ['image', 'media', 'font']:
+                global_vars.logger.debug(f"Skipping {resource_type} request: {route.request.url}")
+                await route.abort()
+            else:
+                await route.continue_()
+
         load_result = False  # Store load state result for logging as boolean
         networkidle_result = False
         content = ""
@@ -148,7 +157,9 @@ class Crawler:
 
                 # Attempt initial load if not already successful
                 if not load_result:
-                    try:
+                    try:                        
+                        await page.route("**/*", request_handler)
+
                         playwright_response = await page.goto(url, wait_until='load', timeout=timeout * 1000)
 
                         load_result = True
