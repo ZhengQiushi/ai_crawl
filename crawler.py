@@ -232,116 +232,114 @@ class Crawler:
         async def crawl_page(url: str, depth: int, process_local_thread):
             """Crawl a single page"""
             start_time = time.time()
-
-
             try:
-                if depth > max_depth or len(visited_urls) >= max_pages_per_website or shutdown_event.is_set():
-                    raise Exception(f"[{business_id}] Reached max depth or max pages or shutdown signal. Skipping {url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
-
                 url_fp = RFPDupeFilter().request_fingerprint(Request(url.strip('/')))
-                if url in visited_urls or url_fp in visited_urls_fp:
-                    raise Exception(f"[{business_id}] Already visited {url}. Skipping in process: proc-{os.getpid()}-{threading.current_thread().name}")
+                if depth > max_depth or len(visited_urls) >= max_pages_per_website or shutdown_event.is_set():
+                    global_vars.logger.debug(f"[{business_id}] Reached max depth or max pages or shutdown signal. Skipping {url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
                 
-                visited_urls.add(url)
-                visited_urls_fp.add(url_fp)
+                elif url in visited_urls or url_fp in visited_urls_fp:
+                    global_vars.logger.debug(f"[{business_id}] Already visited {url}. Skipping in process: proc-{os.getpid()}-{threading.current_thread().name}")
 
-                should_crawl = True
-                html = None
-                scrapy_like_response = None
-                html_info = URLInfo(url, URLType.HTML)
-
-                global_vars.logger.debug(f"[{business_id}] Fetching {url} with Playwright in process: proc-{os.getpid()}-{threading.current_thread().name}")
-                html, title, scrapy_like_response = await Crawler.fetch_with_playwright(url, process_local_thread, max_retries, timeout)
-                
-                if not html:
-                    html_info = await url_type_checker.is_pdf_url_with_title(url)
-                    if html_info.url_type == URLType.PDF:
-                        global_vars.logger.info(f"[{business_id}] Fetching pdf {html_info.url_type} URL: {url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
-                    elif html_info.url_type == URLType.DOCX:
-                        global_vars.logger.info(f"[{business_id}] Fetching doc {html_info.url_type} URL: {url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
-                    elif html_info.url_type != URLType.HTML:
-                        global_vars.logger.info(f"[{business_id}] Skipping {html_info.url_type} URL: {url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
-                        should_crawl = False
-                    else:
-                        should_crawl = False
-                        crawl_stats['failed_urls'] += 1
-                        global_vars.logger.info(f"[{business_id}] Failed parse URL: {url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
                 else:
-                    html_info.title = title
+                
+                    visited_urls.add(url)
+                    visited_urls_fp.add(url_fp)
 
+                    should_crawl = True
+                    html = None
+                    scrapy_like_response = None
+                    html_info = URLInfo(url, URLType.HTML)
 
-                if should_crawl:
-                    if scrapy_like_response is not None:
-                        response_url_fp = RFPDupeFilter().request_fingerprint(Request(scrapy_like_response.url.strip('/')))
-                        visited_urls.add(scrapy_like_response.url)
-                        visited_urls_fp.add(response_url_fp)
-
-                        if depth < max_depth and crawl_stats['crawled_count'] < max_pages_per_website:
-                            global_vars.logger.debug(f"[{business_id}] Extracting links from {url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
-                            try:
-                                links = await link_extractor.extract_links(scrapy_like_response, url)
-                                
-                                new_links = []
-                                for link in links: 
-                                    url_fp = RFPDupeFilter().request_fingerprint(Request(link.strip('/')))
-                                    if (link not in visited_urls and url_fp not in visited_urls_fp) and depth + 1 <= max_depth and crawl_stats['total_urls'] < max_pages_per_website:
-                                        new_links.append(link)
-                                
-                                crawl_stats['all_urls'].update(new_links)
-                                crawl_stats['total_urls'] += len(new_links)
-
-                                global_vars.logger.debug(f"[{business_id}] Adding {len(new_links)} new links to queue for {url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
-                                for i in range(0, len(new_links), batch_size):
-                                    batch = new_links[i:i + batch_size]
-                                    task_queue.put((batch, depth + 1))
-
-                                    global_vars.logger.debug(f"[{business_id}] Adding {batch} new links to queue for {url} as batch {i} in process: proc-{os.getpid()}-{threading.current_thread().name}")
-                            except Exception as e:
-                                global_vars.logger.error(f"[{business_id}] Error extracting or processing links from URL {url}: {e} in process: proc-{os.getpid()}-{threading.current_thread().name}")
-
+                    global_vars.logger.debug(f"[{business_id}] Fetching {url} with Playwright in process: proc-{os.getpid()}-{threading.current_thread().name}")
+                    html, title, scrapy_like_response = await Crawler.fetch_with_playwright(url, process_local_thread, max_retries, timeout)
+                    
+                    if not html:
+                        html_info = await url_type_checker.is_pdf_url_with_title(url)
+                        if html_info.url_type == URLType.PDF:
+                            global_vars.logger.info(f"[{business_id}] Fetching pdf {html_info.url_type} URL: {url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
+                        elif html_info.url_type == URLType.DOCX:
+                            global_vars.logger.info(f"[{business_id}] Fetching doc {html_info.url_type} URL: {url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
+                        elif html_info.url_type != URLType.HTML:
+                            global_vars.logger.info(f"[{business_id}] Skipping {html_info.url_type} URL: {url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
+                            should_crawl = False
                         else:
-                            global_vars.logger.debug(f"[{business_id}] Max depth or max pages reached, not extracting links from {url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
+                            should_crawl = False
+                            crawl_stats['failed_urls'] += 1
+                            global_vars.logger.info(f"[{business_id}] Failed parse URL: {url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
+                    else:
+                        html_info.title = title
 
 
-                    item = {
-                            'row': {
-                                'url': scrapy_like_response.url if scrapy_like_response else url,
-                                'content': html,
-                                'title': html_info.title,
-                                'processID': f"{os.getpid()}-{threading.current_thread().name}",
-                                'depth': depth,
-                                'url_type':  html_info.url_type,
-                                **{k: provider[k] for k in ['state', 'county', 'googleReview', 
-                                                    'googleReviewRating', 'googleReviewCount',
-                                                    'domain', 'googleEntry', 'businessFullName', 'businessID', 'website'] if k in provider}
+                    if should_crawl:
+                        if scrapy_like_response is not None:
+                            response_url_fp = RFPDupeFilter().request_fingerprint(Request(scrapy_like_response.url.strip('/')))
+                            visited_urls.add(scrapy_like_response.url)
+                            visited_urls_fp.add(response_url_fp)
+
+                            if depth < max_depth and crawl_stats['crawled_count'] < max_pages_per_website:
+                                global_vars.logger.debug(f"[{business_id}] Extracting links from {url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
+                                try:
+                                    links = await link_extractor.extract_links(scrapy_like_response, url)
+                                    
+                                    new_links = []
+                                    for link in links: 
+                                        url_fp = RFPDupeFilter().request_fingerprint(Request(link.strip('/')))
+                                        if (link not in visited_urls and url_fp not in visited_urls_fp) and depth + 1 <= max_depth and crawl_stats['total_urls'] < max_pages_per_website:
+                                            new_links.append(link)
+                                    
+                                    crawl_stats['all_urls'].update(new_links)
+                                    crawl_stats['total_urls'] += len(new_links)
+
+                                    global_vars.logger.info(f"[{business_id}] Adding {len(new_links)} new links to queue for {url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
+                                    for i in range(0, len(new_links), batch_size):
+                                        batch = new_links[i:i + batch_size]
+                                        task_queue.put((batch, depth + 1))
+
+                                        global_vars.logger.debug(f"[{business_id}] Adding {batch} new links to queue for {url} as batch {i} in process: proc-{os.getpid()}-{threading.current_thread().name}")
+                                except Exception as e:
+                                    global_vars.logger.error(f"[{business_id}] Error extracting or processing links from URL {url}: {e} in process: proc-{os.getpid()}-{threading.current_thread().name}")
+
+                            else:
+                                global_vars.logger.debug(f"[{business_id}] Max depth or max pages reached, not extracting links from {url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
+
+
+                        item = {
+                                'row': {
+                                    'url': scrapy_like_response.url if scrapy_like_response else url,
+                                    'content': html,
+                                    'title': html_info.title,
+                                    'processID': f"{os.getpid()}-{threading.current_thread().name}",
+                                    'depth': depth,
+                                    'url_type':  html_info.url_type,
+                                    **{k: provider[k] for k in ['state', 'county', 'googleReview', 
+                                                        'googleReviewRating', 'googleReviewCount',
+                                                        'domain', 'googleEntry', 'businessFullName', 'businessID', 'website'] if k in provider}
+                                }
                             }
-                        }
 
-                    # Call pipeline to save the item
-                    try:
-                        if item:
-                            pipeline.process_item(item, None) # Use pipeline to save to ES.
-                    except Exception as e:
-                        global_vars.logger.error(f"[{business_id}] Error processing item for URL {url}: {e} in process: proc-{os.getpid()}-{threading.current_thread().name}")
+                        # Call pipeline to save the item
+                        try:
+                            if item:
+                                pipeline.process_item(item, None) # Use pipeline to save to ES.
+                        except Exception as e:
+                            global_vars.logger.error(f"[{business_id}] Error processing item for URL {url}: {e} in process: proc-{os.getpid()}-{threading.current_thread().name}")
 
-                        
-                         
-                else:
-                    global_vars.logger.debug(f"[{business_id}] Skipping link extraction for {url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
+                            
+                            
+                    else:
+                        global_vars.logger.debug(f"[{business_id}] Skipping link extraction for {url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
 
             except Exception as e:
                 global_vars.logger.error(f"[{business_id}] An unexpected error occurred while crawling URL {url}: {e} in process: proc-{os.getpid()}-{threading.current_thread().name}")
-
 
             crawl_stats['crawled_count'] += 1
             end_time = time.time()
             fetch_time = end_time - start_time
             global_vars.logger.info(f"[{business_id}] Crawling {url} at depth {depth} - {website} - Crawled: {crawl_stats['crawled_count']}/{crawl_stats['total_urls']} - Fetch Time: {fetch_time:.2f} seconds in process: proc-{os.getpid()}-{threading.current_thread().name}")
 
-        @staticmethod
-        async def thread_worker():
+        async def thread_worker(website, business_id):
             """Worker that processes URLs from the queue"""
-            global_vars.logger.debug(f"Thread worker started in thread: proc-{os.getpid()}-{threading.current_thread().name}")
+            global_vars.logger.debug(f"[{business_id}] Thread worker started for {website} in thread: proc-{os.getpid()}-{threading.current_thread().name}")
 
             process_local_thread = threading.local()
             process_local_thread = await Crawler.init_process_resources()
@@ -352,43 +350,43 @@ class Crawler:
             try:
                 while not shutdown_event.is_set():
                     try:
-                        global_vars.logger.debug(f"thread try to get task: proc-{os.getpid()}-{threading.current_thread().name}")
+                        global_vars.logger.debug(f"[{business_id}] Thread is trying to get task: proc-{os.getpid()}-{threading.current_thread().name}")
 
                         batch, depth = task_queue.get_nowait()
-                        global_vars.logger.debug(f"Got batch of {len(batch)} URLs from queue at depth {depth} in thread: proc-{os.getpid()}-{threading.current_thread().name}")
+                        global_vars.logger.debug(f"[{business_id}] Got batch of {len(batch)} URLs from queue at depth {depth} in thread: proc-{os.getpid()}-{threading.current_thread().name}")
                         tasks = [crawl_page(url, depth, process_local_thread) for url in batch]
-                        global_vars.logger.debug(f"Creating {len(tasks)} crawl tasks for batch in thread: proc-{os.getpid()}-{threading.current_thread().name}")
+                        global_vars.logger.debug(f"[{business_id}] Creating {len(tasks)} crawl tasks for batch in thread: proc-{os.getpid()}-{threading.current_thread().name}")
                         await asyncio.gather(*tasks, return_exceptions=True)
                         task_queue.task_done()
-                        global_vars.logger.debug(f"Batch processing completed in thread: proc-{os.getpid()}-{threading.current_thread().name}")
-                        
+                        global_vars.logger.debug(f"[{business_id}] Batch processing completed in thread: proc-{os.getpid()}-{threading.current_thread().name}")
+
                         # After finishing a batch, check if we should exit
                         if crawl_stats['crawled_count'] > 0 and (crawl_stats['crawled_count'] >= crawl_stats['total_urls'] or crawl_stats['crawled_count'] >= max_pages_per_website):
-                            global_vars.logger.debug(f"Crawled all URLs or reached max pages, exiting thread worker in thread: proc-{os.getpid()}-{threading.current_thread().name}")
+                            global_vars.logger.info(f"[{business_id}] Crawled all URLs or reached max pages, exiting thread worker in thread: proc-{os.getpid()}-{threading.current_thread().name}")
                             break
-                            
+
                     except queue.Empty:
                         # Check if we should exit when queue is empty
                         if crawl_stats['crawled_count'] > 0 and (crawl_stats['crawled_count'] >= crawl_stats['total_urls'] or crawl_stats['crawled_count'] >= max_pages_per_website):
-                            global_vars.logger.debug(f"Attemp {attemps} / 3, {crawl_stats['crawled_count']} >= {crawl_stats['total_urls']}. attempt to exit thread worker in thread: proc-{os.getpid()}-{threading.current_thread().name}")
+                            global_vars.logger.info(f"[{business_id}] Attemp {attemps} / 3, {crawl_stats['crawled_count']} >= {crawl_stats['total_urls']}. attempt to exit thread worker in thread: proc-{os.getpid()}-{threading.current_thread().name}")
                             attemps += 1
                             if last_attempt_total_urls != crawl_stats['total_urls']:
                                 last_attempt_total_urls = crawl_stats['total_urls']
                                 attemps = 0
 
                             if attemps >= 3:
-                                global_vars.logger.info(f"Crawled all URLs or reached max pages, exiting thread worker in thread: proc-{os.getpid()}-{threading.current_thread().name}")   
+                                global_vars.logger.warn(f"[{business_id}] Crawled all URLs or reached max pages, exiting thread worker in thread: proc-{os.getpid()}-{threading.current_thread().name}")
                                 break
-                            
-                        global_vars.logger.debug(f"Queue is empty, continuing in thread: proc-{os.getpid()}-{threading.current_thread().name} {crawl_stats['crawled_count']} / {crawl_stats['total_urls']}")
+
+                        global_vars.logger.debug(f"[{business_id}] Queue is empty, continuing in thread: proc-{os.getpid()}-{threading.current_thread().name} {crawl_stats['crawled_count']} / {crawl_stats['total_urls']}")
                         await asyncio.sleep(1)  # Add small delay to prevent busy waiting
                         continue
-                        
+
             except Exception as e:
-                global_vars.logger.error(f"Thread worker error for {website}: {e} in thread: proc-{os.getpid()}-{threading.current_thread().name}")
-            
+                global_vars.logger.error(f"[{business_id}] Thread worker error for {website}: {e} in thread: proc-{os.getpid()}-{threading.current_thread().name}")
+
             await Crawler.close_process_resources(process_local_thread)
-            global_vars.logger.debug(f"Thread worker exited in thread: proc-{os.getpid()}-{threading.current_thread().name}")
+            global_vars.logger.debug(f"[{business_id}] Thread worker exited in thread: proc-{os.getpid()}-{threading.current_thread().name}")
 
         # Start with initial URL
         global_vars.logger.info(f"[{business_id}] Starting crawl for {start_url} in process: proc-{os.getpid()}-{threading.current_thread().name}")
@@ -403,7 +401,7 @@ class Crawler:
             for _ in range(max_concurrent_per_thread):
                 task = loop.run_in_executor(
                     executor,
-                    lambda: asyncio.new_event_loop().run_until_complete(thread_worker())
+                    lambda: asyncio.new_event_loop().run_until_complete(thread_worker(website, business_id))
                 )
                 tasks.append(task)
             
