@@ -79,7 +79,7 @@ class Crawler:
             global_vars.logger.debug(f"Launching Playwright in process: proc-{os.getpid()}-{threading.current_thread().name}")
             process_local.playwright = await async_playwright().start()
             process_local.browser = await process_local.playwright.chromium.launch(headless=True)
-            process_local.context = await process_local.browser.new_context(user_agent=user_agent)
+            process_local.context = await process_local.browser.new_context(user_agent=user_agent,ignore_https_errors=True)
             global_vars.logger.debug(f"Playwright launched successfully in process: proc-{os.getpid()}-{threading.current_thread().name}")
         
         if not hasattr(process_local, 'session'):
