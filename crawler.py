@@ -67,13 +67,13 @@ class Crawler:
         self.link_extractor = AsyncLinkExtractor()
         self.url_type_checker = URLTypeChecker()
 
-        self.user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36'
+        self.user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36'
     #  Make the following functions static
     @staticmethod
     async def init_process_resources():
         """Initialize resources for each process"""
         process_local = threading.local()
-        user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36'
+        user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36'
         global_vars.logger.debug(f"Initializing process resources in process: proc-{os.getpid()}-{threading.current_thread().name}")
         if not hasattr(process_local, 'playwright'):
             global_vars.logger.debug(f"Launching Playwright in process: proc-{os.getpid()}-{threading.current_thread().name}")
